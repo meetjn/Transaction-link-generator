@@ -8,7 +8,13 @@ import React, {
 import { MetaKeep } from "metakeep";
 import { defaultRateLimiter } from "../utils/rateLimiting";
 
-// Define interface without extending MetaKeep to avoid conflicts
+/**
+ * ExtendedMetaKeep Interface
+ *
+ * Defines the shape of the MetaKeep SDK instance with optional methods
+ * to handle API differences between SDK versions. This approach allows
+ * our application to work with different versions of the MetaKeep SDK.
+ */
 interface ExtendedMetaKeep {
   isConnected?: () => Promise<boolean>;
   getAccounts?: () => Promise<string[]>;
@@ -41,17 +47,26 @@ interface ExtendedMetaKeep {
   address?: string;
 }
 
+/**
+ * MetaKeepContextType Interface
+ *
+ * Defines the shape of the context value that will be provided
+ * to components using the useMetaKeep hook.
+ */
 interface MetaKeepContextType {
-  metaKeep: MetaKeep | null;
-  loading: boolean;
-  error: string | null;
-  connecting: boolean;
-  connected: boolean;
-  accountAddress: string | null;
-  connect: () => Promise<void>;
-  disconnect: () => Promise<void>;
+  metaKeep: MetaKeep | null; // The MetaKeep SDK instance
+  loading: boolean; // Loading state during initialization
+  error: string | null; // Error message if something goes wrong
+  connecting: boolean; // Indicates wallet connection in progress
+  connected: boolean; // Indicates if wallet is connected
+  accountAddress: string | null; // Connected wallet address
+  connect: () => Promise<void>; // Function to connect wallet
+  disconnect: () => Promise<void>; // Function to disconnect wallet
 }
 
+/**
+ * Create the MetaKeep context with default values
+ */
 const MetaKeepContext = createContext<MetaKeepContextType>({
   metaKeep: null,
   loading: false,
@@ -63,21 +78,42 @@ const MetaKeepContext = createContext<MetaKeepContextType>({
   disconnect: async () => {},
 });
 
+/**
+ * Custom hook to access the MetaKeep context
+ * @returns The MetaKeep context value
+ */
 export const useMetaKeep = () => useContext(MetaKeepContext);
 
+/**
+ * Props for the MetaKeepProvider component
+ */
 interface MetaKeepProviderProps {
   children: ReactNode;
 }
 
+/**
+ * MetaKeepProvider Component
+ *
+ * Provides MetaKeep wallet functionality to the application.
+ * Initializes the MetaKeep SDK, handles wallet connection/disconnection,
+ * and manages wallet state.
+ */
 export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
   children,
 }) => {
+  // State for the MetaKeep SDK instance
   const [metaKeep, setMetaKeep] = useState<MetaKeep | null>(null);
+  // Loading state during initialization
   const [loading, setLoading] = useState<boolean>(true);
+  // Error state for any errors that occur
   const [error, setError] = useState<string | null>(null);
+  // State for connection in progress
   const [connecting, setConnecting] = useState<boolean>(false);
+  // State for whether wallet is connected
   const [connected, setConnected] = useState<boolean>(false);
+  // State for the connected wallet address
   const [accountAddress, setAccountAddress] = useState<string | null>(null);
+  // State for tracking transaction timestamps for rate limiting
   const [transactionTimestamps, setTransactionTimestamps] = useState<number[]>(
     []
   );
@@ -86,7 +122,10 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
   const MAX_TRANSACTIONS_PER_MINUTE = 10;
   const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
 
-  // Rate limiting check function
+  /**
+   * Rate limiting function to prevent abuse
+   * Throws an error if the rate limit is exceeded
+   */
   const checkRateLimit = () => {
     const now = Date.now();
     const windowStart = now - RATE_LIMIT_WINDOW_MS;
@@ -106,6 +145,9 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
     setTransactionTimestamps([...recentTransactions, now]);
   };
 
+  /**
+   * Initialize the MetaKeep SDK on component mount
+   */
   useEffect(() => {
     const initializeMetaKeep = async () => {
       try {
@@ -121,6 +163,7 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
           );
         }
 
+        // Create a new MetaKeep instance with configuration
         const metaKeepInstance = new MetaKeep({
           appId,
           chainId: Number(process.env.REACT_APP_CHAIN_ID || "137"),
@@ -134,20 +177,23 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
         console.log("MetaKeep instance created:", metaKeepInstance);
         setMetaKeep(metaKeepInstance);
 
-        // Check if the user is already connected
+        // Check if the user is already connected using multiple fallback methods
         let isConnected = false;
         try {
           if (typeof (metaKeepInstance as any).isConnected === "function") {
+            // Preferred method if available
             isConnected = await (metaKeepInstance as any).isConnected();
           } else if (
             typeof (metaKeepInstance as any).getAddress === "function"
           ) {
+            // Fallback: Try to get address, if successful, we're connected
             const address = await (metaKeepInstance as any).getAddress();
             isConnected = !!address;
           } else if (
             (metaKeepInstance as any).address ||
             (metaKeepInstance as any).defaultAccount
           ) {
+            // Fallback: Check if address or defaultAccount properties exist
             isConnected = true;
           }
         } catch (e) {
@@ -157,19 +203,21 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
         console.log("MetaKeep isConnected:", isConnected);
         setConnected(isConnected);
 
+        // If connected, get the account address using multiple fallback methods
         if (isConnected) {
           try {
             let accounts: string[] = [];
             if (typeof (metaKeepInstance as any).getAccounts === "function") {
+              // Preferred method if available
               accounts = await (metaKeepInstance as any).getAccounts();
             } else if (
               typeof (metaKeepInstance as any).getAddress === "function"
             ) {
-              // Try alternative method
+              // Fallback: Try to get address directly
               const address = await (metaKeepInstance as any).getAddress();
               accounts = address ? [address] : [];
             } else {
-              // Get from metaKeep.address if it exists
+              // Fallback: Get from metaKeep.address or defaultAccount properties
               const address =
                 (metaKeepInstance as any).address ||
                 (metaKeepInstance as any).defaultAccount;
@@ -199,6 +247,10 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
     initializeMetaKeep();
   }, []);
 
+  /**
+   * Connect to the MetaKeep wallet
+   * Uses multiple fallback methods to handle different SDK versions
+   */
   const connect = async () => {
     if (!metaKeep) return;
 
@@ -211,12 +263,13 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
       console.log("MetaKeep connect: Attempting to connect wallet");
       setConnecting(true);
 
-      // Check if connect method exists
+      // Try different connection methods based on what's available
       if (typeof (metaKeep as any).connect === "function") {
+        // Preferred method if available
         await (metaKeep as any).connect();
         console.log("MetaKeep connect: Connection successful via connect()");
       } else {
-        // Alternative approach based on documentation
+        // Alternative approach if connect() is not available
         console.log(
           "MetaKeep connect: connect() not found, trying alternative approach"
         );
@@ -224,14 +277,14 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
         // Try to trigger a transaction to prompt wallet connection
         if (typeof (metaKeep as any).signMessage === "function") {
           try {
-            // First try the object form
+            // First try the object form of signMessage
             await (metaKeep as any).signMessage({
               message: "Connect to application",
               reason: "Wallet connection",
             });
           } catch (signErr) {
             console.error("Error with object form signMessage:", signErr);
-            // Try the parameter form
+            // Try the parameter form if object form fails
             await (metaKeep as any).signMessage(
               "Connect to application",
               "Wallet connection"
@@ -244,17 +297,18 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
 
       setConnected(true);
 
-      // If we got here, we can try to get accounts
+      // Get the account address after connection using multiple fallback methods
       try {
         let accounts: string[] = [];
         if (typeof (metaKeep as any).getAccounts === "function") {
+          // Preferred method if available
           accounts = await (metaKeep as any).getAccounts();
         } else if (typeof (metaKeep as any).getAddress === "function") {
-          // Try alternative method
+          // Fallback: Try to get address directly
           const address = await (metaKeep as any).getAddress();
           accounts = address ? [address] : [];
         } else {
-          // Get from metaKeep.address if it exists
+          // Fallback: Get from metaKeep.address or defaultAccount properties
           const address =
             (metaKeep as any).address || (metaKeep as any).defaultAccount;
           accounts = address ? [address] : [];
@@ -280,16 +334,21 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
     }
   };
 
+  /**
+   * Disconnect from the MetaKeep wallet
+   * Uses multiple fallback methods to handle different SDK versions
+   */
   const disconnect = async () => {
     if (!metaKeep) return;
 
     try {
-      // Check if disconnect method exists
+      // Try different disconnection methods based on what's available
       if (typeof (metaKeep as any).disconnect === "function") {
+        // Preferred method if available
         await (metaKeep as any).disconnect();
         console.log("MetaKeep: Disconnected via disconnect()");
       } else {
-        // If there's no explicit disconnect, we'll just clear the state
+        // If there's no explicit disconnect, just clear the state
         console.log(
           "MetaKeep: No disconnect method, clearing local state only"
         );
@@ -306,6 +365,7 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
     }
   };
 
+  // Provide the MetaKeep context to children components
   return (
     <MetaKeepContext.Provider
       value={{
