@@ -1,3 +1,51 @@
+## Demo Testing of the project: 
+
+For Contract address use: 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174 
+
+
+For Contract ABI use: [
+  {
+    "constant": false,
+    "inputs": [
+      {"name": "spender", "type": "address"},
+      {"name": "amount", "type": "uint256"}
+    ],
+    "name": "approve",
+    "outputs": [{"name": "", "type": "bool"}],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [{"name": "account", "type": "address"}],
+    "name": "balanceOf",
+    "outputs": [{"name": "", "type": "uint256"}],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {"name": "recipient", "type": "address"},
+      {"name": "amount", "type": "uint256"}
+    ],
+    "name": "transfer",
+    "outputs": [{"name": "", "type": "bool"}],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]
+
+Select Function as Transfer: 
+
+* Recipient: 0x0000000000000000000000000000000000000000 (or any valid address)
+* Amount: 1000000 (USDC has 6 decimals, so this is 1 USDC)
+* Add a description like "Test USDC Transfer"
+* Click on the generate link and you are good to go! (if you are on a local host otherwise aws OTP verification will fail for some unknown reason)
+
 ## Architecture Diagram
 
 ![Image](architecture.png)
