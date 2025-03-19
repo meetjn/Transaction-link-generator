@@ -61,4 +61,4 @@ The project should start at localhost:3000
 
 ##### Q. Are there any UI testing done?
 
--> Yes, basic UI testing.
+-> no, not yet
