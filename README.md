@@ -1,46 +1,64 @@
-# Getting Started with Create React App
+## Architecture Diagram
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+![Image](architecture.png)
 
-## Available Scripts
+## User Flow
 
-In the project directory, you can run:
+As a developer I want to generate a TXN link for users
 
-### `npm start`
+As a user, I want to execute the TXN that was sent by the developer
+![Image](flow.png)
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+### AWS link:
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+http://metakeep-assignment.s3-website.eu-north-1.amazonaws.com
 
-### `npm test`
+Please note: Otp verification is likely to fail on this server. To use this project to full potential please clone this repo on your local machine
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Project Setup
 
-### `npm run build`
+Clone the project by running the command
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+        git clone https://github.com/meetjn/mtkp-assignment.git
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+Run the command
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+        npm install
 
-### `npm run eject`
+        npm start
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+Please make sure to create a .env file as shown in .env.example file and getting its credentials correctly
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+The project should start at localhost:3000
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+## Challenges faced
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+#### 1. Minor - Importing metakeep's sdk + how to correctly install turns out how I had to search in the npm website
 
-## Learn More
+#### 2. Minor - Hosting this project on AWS, had to figure out what files to put under the root because I uploaded the whole build folder
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+#### 3. Biggest one - When testing this project on localhost it worked by this I mean the otp was getting verified while hitting on the connect wallet button, however when doing the same testing on aws hosted server otp verification failed and so does the sharable transaction link generation
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+#### 4. At some point I was faced to use AI to write code mainly Claude, I faced several pain points such as errors in frontend which I had to resolve either by google or by using perplexity but overall it was fun learning and using AI technology in my IDE. it made me more productive
+
+## FAQs
+
+##### Q. What are the features does this project accommodates?
+
+-> Two feature, it lets developer enters the smart contract details (contract address, abi, rpc url), generates sharable link and lets users view transaction details, and signs the transaction using the MetaKeep's SDK with their embedded wallet.
+
+##### Q. Have you used any AI while completing this project?
+
+-> Yes, perplexity for doing the most amount of research i.e. laying out plan. And used claude 3.5 for fixing errors + co-pilot
+
+##### Q. Have you implemented any measure that prevents abuse, How?
+
+-> Yes, implemented rate limiting to generate 10 transactions per minute and considering CAPTCHA verification to prevent bot spamming to the app.
+
+##### Q. Are there any CI/CD pipeline used into the project?
+
+-> Yes, CI/CD is present.
+
+##### Q. Are there any UI testing done?
+
+-> Yes, basic UI testing.
