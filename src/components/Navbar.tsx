@@ -55,17 +55,20 @@ const Navbar: React.FC = () => {
           <Link as={RouterLink} to="/" fontWeight="medium">
             Home
           </Link>
-          <Link as={RouterLink} to="/create" fontWeight="medium">
+          <Link as={RouterLink} to="/create" mr={4}>
             Create Transaction
           </Link>
         </HStack>
 
         <Box>
-          {!connected ? (
+          {!accountAddress ? (
             <Button
               colorScheme="blue"
               size="sm"
-              onClick={connect}
+              onClick={(e) => {
+                e.preventDefault();
+                connect();
+              }}
               isLoading={connecting}
               loadingText="Connecting"
             >

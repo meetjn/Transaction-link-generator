@@ -53,13 +53,39 @@ const ContractForm: React.FC<ContractFormProps> = ({ onContractSubmit }) => {
     { id: 56, name: "BSC", rpc: "https://bsc-dataseed.binance.org" },
     { id: 42161, name: "Arbitrum One", rpc: "https://arb1.arbitrum.io/rpc" },
     { id: 10, name: "Optimism", rpc: "https://mainnet.optimism.io" },
+    {
+      id: 80001,
+      name: "Polygon Mumbai",
+      rpc: "https://rpc-mumbai.maticvigil.com",
+    },
+    {
+      id: 11155111,
+      name: "Sepolia",
+      rpc: "https://sepolia.infura.io/v3/your-project-id",
+    },
+    {
+      id: 5,
+      name: "Goerli",
+      rpc: "https://goerli.infura.io/v3/your-project-id",
+    },
+    { id: -1, name: "Custom Network", rpc: "" }, // Special entry for custom networks
   ];
+
+  // State to track if a custom network is selected
+  const [isCustomNetwork, setIsCustomNetwork] = useState(false);
 
   // Update RPC URL when network changes
   useEffect(() => {
     const network = networks.find((n) => n.id === chainId);
     if (network) {
-      setRpcUrl(network.rpc);
+      if (network.id === -1) {
+        // Custom network selected, don't change RPC but show the field
+        setIsCustomNetwork(true);
+      } else {
+        // Standard network selected, update RPC and hide the field
+        setRpcUrl(network.rpc);
+        setIsCustomNetwork(false);
+      }
     }
   }, [chainId]);
 
@@ -91,8 +117,9 @@ const ContractForm: React.FC<ContractFormProps> = ({ onContractSubmit }) => {
       newErrors.chainId = "Chain ID is required";
     }
 
-    if (!rpcUrl) {
-      newErrors.rpcUrl = "RPC URL is required";
+    // Only validate RPC URL if using a custom network
+    if (isCustomNetwork && !rpcUrl) {
+      newErrors.rpcUrl = "RPC URL is required for custom networks";
     }
 
     setErrors(newErrors);
@@ -183,7 +210,11 @@ const ContractForm: React.FC<ContractFormProps> = ({ onContractSubmit }) => {
           <FormErrorMessage>{errors.chainId}</FormErrorMessage>
         </FormControl>
 
-        <FormControl isRequired isInvalid={!!errors.rpcUrl}>
+        <FormControl
+          isRequired
+          isInvalid={!!errors.rpcUrl}
+          display={isCustomNetwork ? "block" : "none"}
+        >
           <FormLabel>RPC URL</FormLabel>
           <Input
             placeholder="https://..."

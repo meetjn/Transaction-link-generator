@@ -54,6 +54,10 @@ export interface TransactionDetails {
   functionName: string;     // Name of the function to call
   functionParams: any[];    // Parameters to pass to the function
   value?: string;           // ETH value to send with the transaction (for payable functions)
+  email?: string;           // User email for transaction verification
+  purpose?: string;         // Human-readable purpose of the transaction
+  reason?: string;          // Reason for transaction (needed by MetaKeep API)
+  bypassSecurity?: boolean; // Flag to bypass security warnings
 }
 
 /**

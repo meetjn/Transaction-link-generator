@@ -117,7 +117,7 @@ const CreateTransactionPage: React.FC = () => {
     setGeneratingLink(true);
 
     try {
-      // Save transaction details to storage
+      // Create transaction object
       const savedTransaction = {
         id: transactionId,
         transactionDetails: transactionDetails,
@@ -125,8 +125,16 @@ const CreateTransactionPage: React.FC = () => {
         description: transactionDescription,
       };
 
-      // In a real app, you'd send this to your backend
-      // For now, we'll store it in localStorage as a demo
+      // Create URL with encoded transaction data instead of using localStorage
+      const baseUrl = window.location.origin;
+      const encodedData = encodeURIComponent(JSON.stringify(savedTransaction));
+
+      // Create link with data in URL parameters
+      const link = `${baseUrl}/execute/${transactionId}?data=${encodedData}`;
+      setTransactionLink(link);
+
+      // For backwards compatibility, also save to localStorage
+      // This can be removed in the future when all users are using the new URL parameter approach
       const savedTransactions = JSON.parse(
         localStorage.getItem("savedTransactions") || "[]"
       );
@@ -136,10 +144,6 @@ const CreateTransactionPage: React.FC = () => {
         JSON.stringify(savedTransactions)
       );
 
-      // Generate shareable link
-      const baseUrl = window.location.origin;
-      const link = `${baseUrl}/execute/${transactionId}`;
-      setTransactionLink(link);
       onOpen();
     } catch (error) {
       console.error("Error generating link:", error);
@@ -315,6 +319,14 @@ const CreateTransactionPage: React.FC = () => {
                 </Button>
               </InputRightElement>
             </InputGroup>
+
+            <Box mt={4} p={3} bg="gray.50" borderRadius="md">
+              <Text fontSize="sm" color="gray.600">
+                This link contains all transaction details. The recipient will
+                need to confirm with their email before executing the
+                transaction.
+              </Text>
+            </Box>
 
             {transactionDescription && (
               <Box mt={4}>

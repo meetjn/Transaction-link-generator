@@ -47,7 +47,10 @@ const HomePage: React.FC = () => {
           <Button
             colorScheme="blue"
             size="lg"
-            onClick={connect}
+            onClick={(e) => {
+              e.preventDefault();
+              connect();
+            }}
             isLoading={loading}
             mb={6}
           >

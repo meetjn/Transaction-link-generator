@@ -15,6 +15,9 @@ import ExecuteTransactionPage from "./pages/ExecuteTransactionPage";
 import { MetaKeepProvider, useMetaKeep } from "./context/MetakeepContext";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
+import MetaKeepExtensionCheck from "./components/MetaKeepExtensionCheck";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import TransactionStatus from "./components/TransactionStatus";
 
 // Wrapper component to display errors
 const MetaKeepErrorHandler: React.FC<{ children: React.ReactNode }> = ({
@@ -37,13 +40,25 @@ const MetaKeepErrorHandler: React.FC<{ children: React.ReactNode }> = ({
   }
 
   if (error) {
+    // First check if it's a MetaKeep SDK loading error
+    // which will be handled by the MetaKeepExtensionCheck component
+    const isSDKLoadingError =
+      error.includes("MetaKeep not found") ||
+      error.includes("MetaKeep still not available") ||
+      error.includes("Failed to load") ||
+      error.includes("MetaKeep SDK") ||
+      error.includes("initialize MetaKeep");
+
     return (
       <Box p={6}>
-        <Alert status="error">
-          <AlertIcon />
-          <AlertTitle>MetaKeep Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
+        <MetaKeepExtensionCheck />
+        {!isSDKLoadingError && (
+          <Alert status="error">
+            <AlertIcon />
+            <AlertTitle>MetaKeep Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
       </Box>
     );
   }

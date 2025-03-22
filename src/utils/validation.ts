@@ -73,7 +73,7 @@ export const validateTransactionDetails = (details: TransactionDetails): { isVal
  * 
  * Performs these validations:
  * 1. Checks if any code exists at the address (contract is deployed)
- * 2. Optionally checks for known malicious bytecode patterns
+ * 2. Makes sure the code length is reasonable
  * 
  * @param contractAddress - The address of the contract to validate
  * @param provider - An ethers.js provider to connect to the blockchain
@@ -93,22 +93,16 @@ export const validateContractCode = async (
       return { isValid: false, error: 'Contract not deployed at this address' };
     }
 
-    // Optional: Security check for known malicious patterns in contract bytecode
-    // This is a basic example and could be expanded with more sophisticated checks
-    const maliciousPatterns = [
-      '0x6080604052', // Example pattern - replace with actual malicious signatures
-    ];
-
-    for (const pattern of maliciousPatterns) {
-      if (code.includes(pattern)) {
-        return { isValid: false, error: 'Potentially malicious contract code detected' };
-      }
+    // Check the code length - very short code is suspicious
+    if (code.length < 10) {
+      return { isValid: false, error: 'Suspiciously short contract code' };
     }
 
-    // Contract exists and passes security checks
+    // Contract exists and passes basic validation
     return { isValid: true };
   } catch (err) {
     // Network error or other issue accessing the blockchain
-    return { isValid: false, error: 'Failed to validate contract code' };
+    console.error("Error validating contract code:", err);
+    return { isValid: false, error: `Failed to validate contract code: ${err instanceof Error ? err.message : 'Unknown error'}` };
   }
 }; 
