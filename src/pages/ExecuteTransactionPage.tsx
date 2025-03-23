@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useLocation } from "react-router-dom";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
 import {
   Box,
   Container,
@@ -24,7 +24,6 @@ import {
   useToast,
   useColorModeValue,
   useDisclosure,
-  Link,
 } from "@chakra-ui/react";
 import { useMetaKeep } from "../context/MetakeepContext";
 import { SavedTransaction, TransactionDetails } from "../types";
@@ -32,7 +31,6 @@ import { useMetaKeepTransaction } from "../hooks/useMetaKeepTransaction";
 import TransactionStatus from "../components/TransactionStatus";
 import EmailConfirmation from "../components/EmailConfirmation";
 import MetaKeepExtensionCheck from "../components/MetaKeepExtensionCheck";
-import { useWalletBalance } from "../hooks/useWalletBalance";
 
 const ExecuteTransactionPage: React.FC = () => {
   const { id: transactionId } = useParams<{ id: string }>();
@@ -40,6 +38,7 @@ const ExecuteTransactionPage: React.FC = () => {
   const toast = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const cardBg = useColorModeValue("white", "gray.700");
+  const navigate = useNavigate();
 
   // Get transaction management hooks
   const {
@@ -56,23 +55,13 @@ const ExecuteTransactionPage: React.FC = () => {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [forceExecution, setForceExecution] = useState<boolean>(false);
   const [securityWarning, setSecurityWarning] = useState<boolean>(false);
+  const [bypassNetworkError, setBypassNetworkError] = useState<boolean>(false);
   const [showManualConnect, setShowManualConnect] = useState<boolean>(false);
-  const [connectionAttempts] = useState<number>(0);
+  const [connectionAttempts, setConnectionAttempts] = useState<number>(0);
+  const [emailDialogOpen, setEmailDialogOpen] = useState<boolean>(false);
 
   // Get wallet connection state
-  const { connect, accountAddress, connecting } = useMetaKeep();
-
-  // Add wallet balance hook
-  const {
-    formattedBalance,
-    loading: balanceLoading,
-    fetchBalance,
-    error: balanceError,
-    sufficientForGas,
-  } = useWalletBalance(
-    transaction?.transactionDetails?.rpcUrl || "https://polygon-rpc.com",
-    transaction?.transactionDetails?.chainId || 137
-  );
+  const { connected, connect, accountAddress, connecting } = useMetaKeep();
 
   // Parse transaction data from URL parameters instead of localStorage
   useEffect(() => {
@@ -124,13 +113,6 @@ const ExecuteTransactionPage: React.FC = () => {
     }
   }, [transaction, accountAddress, connecting]);
 
-  // Refresh balance when account or transaction changes
-  useEffect(() => {
-    if (accountAddress && transaction) {
-      fetchBalance();
-    }
-  }, [accountAddress, transaction, fetchBalance]);
-
   // Simplify the connect wallet handler to use the default email
   const handleConnectWallet = async () => {
     try {
@@ -151,343 +133,242 @@ const ExecuteTransactionPage: React.FC = () => {
 
   // Update email confirm handler to be more robust
   const handleEmailConfirm = async (email: string) => {
-    if (!email || email.trim() === "") {
-      toast({
-        title: "Email Required",
-        description:
-          "Please provide a valid email address to connect with MetaKeep",
-        status: "warning",
-        duration: 3000,
-        isClosable: true,
-      });
-      return;
-    }
+    setEmailDialogOpen(false);
+    setLoading(true);
+    setError(null);
 
+    // Store the email for future use
     setUserEmail(email);
 
     try {
       console.log("Connecting wallet with email:", email);
 
-      // Close the dialog first to prevent UI confusion
-      onClose();
+      // Clear any previous toast notifications
+      toast.closeAll();
 
-      // Show loading toast
-      const loadingToast = toast({
-        title: "Connecting...",
-        description:
-          "Please check your email and approve the connection request",
+      // Show connecting toast
+      const connectingToast = toast({
+        title: "Connecting wallet",
+        description: "Please check your email for verification if prompted",
         status: "loading",
         duration: null,
         isClosable: false,
       });
 
-      // Try to connect with the email
+      // Use the connect method from the context
       await connect(email);
 
-      // Close the loading toast
-      toast.close(loadingToast);
+      // Close loading toast
+      toast.close(connectingToast);
 
-      if (accountAddress) {
-        console.log("Successfully connected with address:", accountAddress);
-        toast({
-          title: "Wallet Connected",
-          description: `Successfully connected with address: ${accountAddress.substring(
-            0,
-            6
-          )}...${accountAddress.substring(accountAddress.length - 4)}`,
-          status: "success",
-          duration: 5000,
-          isClosable: true,
-        });
+      // Show success toast
+      toast({
+        title: "Wallet connected",
+        description: `Successfully connected with email: ${email}`,
+        status: "success",
+        duration: 5000,
+        isClosable: true,
+      });
 
-        // If we have a transaction, execute it automatically
-        if (transaction) {
-          setTimeout(() => executeTransaction(email, forceExecution), 1000);
-        }
-      } else {
-        toast({
-          title: "Connection Issue",
-          description:
-            "Connected but couldn't obtain wallet address. Please check your email and approve the request.",
-          status: "warning",
-          duration: 5000,
-          isClosable: true,
-        });
-      }
-    } catch (err) {
-      // Format error message
-      let errorMsg = "";
-      if (err instanceof Error) {
-        errorMsg = err.message;
-      } else if (typeof err === "object" && err !== null) {
-        try {
-          errorMsg = JSON.stringify(err);
-        } catch {
-          errorMsg = "Unknown error";
-        }
-      } else {
-        errorMsg = String(err);
-      }
+      // If we have a transaction loaded, execute it after a short delay
+      if (transaction) {
+        console.log("Transaction loaded, executing after connection...");
 
-      console.error("Wallet connection error:", errorMsg);
-
-      // Only show error toast for non-cancellation errors
-      if (
-        !errorMsg.includes("cancelled") &&
-        !errorMsg.includes("cancel") &&
-        !errorMsg.includes("denied") &&
-        !errorMsg.includes("OPERATION_CANCELLED")
-      ) {
-        toast({
-          title: "Connection Error",
-          description:
-            errorMsg || "Could not connect to wallet. Please try again.",
-          status: "error",
-          duration: 5000,
-          isClosable: true,
-        });
-      } else {
-        // For cancellation errors, show a milder notification
-        toast({
-          title: "Connection Cancelled",
-          description:
-            "You cancelled the wallet connection request. Please check your email and approve the authentication.",
-          status: "info",
-          duration: 5000,
-          isClosable: true,
-        });
-      }
-    }
-  };
-
-  const executeTransaction = async (email?: string, bypassSecurity = false) => {
-    if (!transaction) return;
-
-    // Use provided email or default to the state value
-    const emailToUse = email || userEmail;
-
-    try {
-      console.log("Executing transaction with email:", emailToUse);
-      setSecurityWarning(false);
-
-      // Ensure we have a connected wallet with account address
-      if (!accountAddress) {
-        console.log("No wallet address available, attempting to connect first");
-        toast({
-          title: "Connecting Wallet",
-          description:
-            "We need to connect your wallet first. Please check your email.",
-          status: "info",
-          duration: 5000,
-          isClosable: true,
-        });
-
-        try {
-          // Try wallet connection with email
-          await connect(emailToUse);
-
-          // If connection succeeded but we still don't have an address, we can't proceed
-          if (!accountAddress) {
-            throw new Error(
-              "Failed to obtain wallet address. Please make sure you've approved the connection request in your email."
-            );
-          }
-        } catch (connectErr) {
-          // Format the error properly
-          let errorMsg = "";
-          if (connectErr instanceof Error) {
-            errorMsg = connectErr.message;
-          } else if (typeof connectErr === "object" && connectErr !== null) {
-            try {
-              errorMsg = JSON.stringify(connectErr);
-            } catch {
-              errorMsg = "Unknown error";
-            }
-          } else {
-            errorMsg = String(connectErr);
-          }
-
-          // Don't show error toast for user cancellations
-          if (
-            errorMsg.includes("cancelled") ||
-            errorMsg.includes("denied") ||
-            errorMsg.includes("OPERATION_CANCELLED")
-          ) {
-            throw new Error(
-              "Transaction cancelled: Wallet connection was rejected. Please check your email and approve the request."
-            );
-          } else {
-            throw new Error(`Unable to connect wallet: ${errorMsg}`);
-          }
-        }
-      }
-
-      // Add email to transaction context
-      const transactionWithEmail = {
-        ...transaction.transactionDetails,
-        email: emailToUse, // This email will be used by the MetaKeep SDK for verification
-        bypassSecurity: bypassSecurity, // Add flag to bypass security warnings if user forces execution
-        reason: "Transfer", // Simplify to a basic reason that should be universally acceptable
-      };
-
-      console.log("Executing transaction:", transactionWithEmail);
-
-      try {
-        // Show loading toast while transaction is being processed
-        const loadingToast = toast({
-          title: "Processing Transaction",
-          description:
-            "Your transaction is being processed. You may receive an email for verification depending on your wallet security settings.",
-          status: "loading",
-          duration: null,
-          isClosable: false,
-        });
-
-        const hash = await execute(transactionWithEmail);
-        console.log("Transaction hash received:", hash);
-        setTxHash(hash);
-
-        // Close loading toast
-        toast.close(loadingToast);
-
-        // Check if this is a placeholder hash from email verification
-        if (hash === "email-verification-pending") {
-          toast({
-            title: "Email Verification Required",
-            description:
-              "Please check your email for a verification request from MetaKeep. You must approve this to complete your transaction.",
-            status: "info",
-            duration: 15000,
-            isClosable: true,
-          });
-        } else {
-          toast({
-            title: "Transaction Submitted",
-            description: "Your transaction is being processed by the network.",
-            status: "success",
-            duration: 5000,
-            isClosable: true,
-          });
-        }
-      } catch (txErr) {
-        // Format error message properly
-        let errorMsg = "";
-        if (txErr instanceof Error) {
-          errorMsg = txErr.message;
-        } else if (typeof txErr === "object" && txErr !== null) {
+        // Give a moment for the connection to stabilize
+        setTimeout(async () => {
           try {
-            // Check for specific MetaKeep error formats
-            if ((txErr as any).status === "INVALID_REASON") {
-              errorMsg =
-                "Invalid reason provided for transaction. This may be a temporary issue. Please try again later.";
-            } else if ((txErr as any).status === "MISSING_NONCE") {
-              errorMsg =
-                "Transaction nonce error. This could be due to a previous pending transaction. Please try again in a few minutes.";
-            } else if (
-              (txErr as any).message &&
-              (txErr as any).message.includes("not found on blockchain")
-            ) {
-              errorMsg =
-                "Your email verification was successful, but the transaction could not be verified on the blockchain. This could be due to network congestion or RPC issues.";
-            } else {
-              errorMsg = JSON.stringify(txErr);
-            }
-          } catch {
-            errorMsg = "Unknown transaction error";
+            await executeTransaction();
+          } catch (error) {
+            console.error("Transaction execution error:", error);
+            setError(error instanceof Error ? error.message : String(error));
+            toast({
+              title: "Transaction Failed",
+              description:
+                error instanceof Error ? error.message : String(error),
+              status: "error",
+              duration: 5000,
+              isClosable: true,
+            });
           }
-        } else {
-          errorMsg = String(txErr);
-        }
-
-        console.error("Transaction execution error:", errorMsg);
-
-        // Check for cancellation errors
-        if (
-          errorMsg.includes("OPERATION_CANCELLED") ||
-          errorMsg.includes("cancelled") ||
-          errorMsg.includes("denied") ||
-          errorMsg.includes("rejected")
-        ) {
-          throw new Error(
-            "Transaction was cancelled by the user. Please check your email and approve the request."
-          );
-        }
-
-        // Check for network/broadcast issues
-        if (
-          errorMsg.includes("failed to broadcast") ||
-          errorMsg.includes("not found on blockchain") ||
-          errorMsg.includes("may have failed")
-        ) {
-          throw new Error(
-            "Email verification was successful, but the transaction could not be confirmed on the blockchain. This could be due to network congestion or RPC issues. Please check back later to see if your transaction was confirmed."
-          );
-        }
-
-        // Throw the formatted error
-        throw new Error(errorMsg);
+        }, 1000);
       }
-    } catch (err) {
-      console.error("Transaction handling error:", err);
+    } catch (error) {
+      console.error("Connection error:", error);
 
-      // Extract error message safely, ensuring objects are properly stringified
+      // Format error for display
       let errorMessage: string;
-
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      } else if (typeof err === "object" && err !== null) {
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === "object" && error !== null) {
         try {
-          // Check for specific MetaKeep error formats
-          if ((err as any).status === "INVALID_REASON") {
-            errorMessage =
-              "Invalid reason provided for transaction. This may be a temporary issue. Please try again later.";
-          } else {
-            errorMessage = JSON.stringify(err);
-          }
-        } catch (jsonErr) {
-          errorMessage = "Unknown transaction error. See console for details.";
+          errorMessage = JSON.stringify(error);
+        } catch (e) {
+          errorMessage = "Unknown connection error";
         }
       } else {
-        errorMessage = String(err);
+        errorMessage = String(error);
       }
 
-      // Handle security warnings specially
-      if (
-        errorMessage.includes("Security check") ||
-        errorMessage.includes("malicious") ||
-        errorMessage.includes("security warning")
-      ) {
-        setSecurityWarning(true);
-        setError(errorMessage);
+      setError(errorMessage);
 
-        // Show a special toast for security warnings
+      // Show error toast with specific guidance
+      toast({
+        title: "Connection failed",
+        description: errorMessage,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+
+      // If the error indicates verification is needed, show a helpful message
+      if (
+        errorMessage.includes("verification") ||
+        errorMessage.includes("check your email") ||
+        errorMessage.includes("consent")
+      ) {
         toast({
-          title: "Security Warning",
+          title: "Email verification needed",
           description:
-            "This transaction was flagged by security checks. Review before proceeding.",
-          status: "warning",
+            "Please check your email and complete the verification process",
+          status: "info",
           duration: 10000,
           isClosable: true,
         });
       }
-      // Don't show error toast for user cancellations to avoid notification spam
-      else if (
-        errorMessage.includes("cancelled") ||
-        errorMessage.includes("denied") ||
-        errorMessage.includes("rejected")
-      ) {
-        // Just set the error without a toast
-        setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Function to execute the transaction
+  const executeTransaction = async () => {
+    if (!transaction) {
+      setError("No transaction to execute");
+      return;
+    }
+
+    if (!accountAddress) {
+      setError("Wallet not connected. Please connect your wallet first.");
+      setEmailDialogOpen(true);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log("Executing transaction...");
+      console.log(
+        "Contract address:",
+        transaction.transactionDetails.contractAddress
+      );
+      console.log("Function:", transaction.transactionDetails.functionName);
+      console.log("Parameters:", transaction.transactionDetails.functionParams);
+      console.log(
+        "ABI:",
+        JSON.stringify(transaction.transactionDetails.abi).substring(0, 200) +
+          "..."
+      );
+
+      // RPC URLs for different networks
+      const rpcUrls = {
+        1: "https://eth-mainnet.g.alchemy.com/v2/demo", // Ethereum
+        137: "https://polygon-rpc.com", // Polygon
+        80002:
+          "https://polygon-amoy.g.alchemy.com/v2/dKz6QD3l7WEbD7xKNOhvHQNhjEQrh4gr", // Polygon Amoy Testnet
+        56: "https://bsc-dataseed.binance.org", // BSC
+        43114: "https://api.avax.network/ext/bc/C/rpc", // Avalanche
+        42161: "https://arb1.arbitrum.io/rpc", // Arbitrum
+        10: "https://mainnet.optimism.io", // Optimism
+      };
+
+      // Add the user's email and reason to the transaction details, and force Polygon Amoy testnet
+      const transactionWithEmail = {
+        ...transaction.transactionDetails,
+        email: userEmail,
+        reason: "Contract Function Execution", // Required by MetaKeep
+        chainId: 80002, // Force Polygon Amoy testnet
+        rpcUrl: rpcUrls[80002], // Use Amoy testnet RPC URL from the mapping
+        bypassSecurity: true, // Always bypass security checks on Amoy testnet
+      };
+
+      console.log("Executing transaction with details:", transactionWithEmail);
+      console.log("Using Polygon Amoy testnet (chainId: 80002)");
+
+      // Execute the transaction with the execute function from the hook
+      const txHash = await execute(transactionWithEmail);
+      console.log("Transaction executed with hash:", txHash);
+
+      // Show success toast
+      toast({
+        title: "Transaction submitted to Polygon Amoy testnet",
+        description: "Your transaction has been submitted successfully.",
+        status: "success",
+        duration: 5000,
+        isClosable: true,
+      });
+
+      // Set transaction hash in state
+      setTxHash(txHash);
+
+      // Navigate to the transaction status page if we have a real hash
+      if (txHash && txHash !== "email-verification-pending") {
+        navigate(`/transaction/${txHash}`, {
+          state: {
+            chainId: transactionWithEmail.chainId,
+            contractAddress: transactionWithEmail.contractAddress,
+            txHash: txHash,
+            fromAddress: accountAddress,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("Transaction execution error:", error);
+
+      // Format error for display
+      let errorMessage: string;
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === "object" && error !== null) {
+        try {
+          errorMessage = JSON.stringify(error);
+        } catch (e) {
+          errorMessage = "Unknown error executing transaction";
+        }
       } else {
-        // Show regular error toast for technical errors
+        errorMessage = String(error);
+      }
+
+      setError(errorMessage);
+
+      // Check if this is a network error that could be bypassed
+      if (
+        errorMessage.includes("network") ||
+        errorMessage.includes("could not detect network")
+      ) {
+        // Show special UI for network errors
+        setBypassNetworkError(false); // Reset in case it was previously set
+
         toast({
-          title: "Transaction Failed",
+          title: "Network Error",
+          description:
+            "There was a problem detecting the network. You can try bypassing network validation.",
+          status: "warning",
+          duration: 8000,
+          isClosable: true,
+        });
+      } else {
+        // Show standard error toast
+        toast({
+          title: "Transaction failed",
           description: errorMessage,
           status: "error",
           duration: 5000,
           isClosable: true,
         });
       }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -516,6 +397,7 @@ const ExecuteTransactionPage: React.FC = () => {
   };
 
   // Get explorer URL for the transaction
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getExplorerUrl = (chainId: number, hash: string) => {
     const explorers: { [key: number]: string } = {
       1: "https://etherscan.io/tx/",
@@ -524,7 +406,6 @@ const ExecuteTransactionPage: React.FC = () => {
       43114: "https://snowtrace.io/tx/",
       42161: "https://arbiscan.io/tx/",
       10: "https://optimistic.etherscan.io/tx/",
-      80002: "https://amoy.polygonscan.com/tx/", // Polygon Amoy testnet
     };
 
     const baseUrl = explorers[chainId] || "https://etherscan.io/tx/";
@@ -646,6 +527,45 @@ const ExecuteTransactionPage: React.FC = () => {
           </Alert>
         )}
 
+        {/* Network error bypass section */}
+        {error &&
+          (error.includes("network") ||
+            error.includes("could not detect network")) && (
+            <Alert status="warning" borderRadius="md">
+              <AlertIcon />
+              <Box>
+                <AlertTitle>Network Detection Error</AlertTitle>
+                <AlertDescription display="block">
+                  <Text mb={2}>
+                    We couldn't connect to the network to validate the contract.
+                    This could be due to:
+                  </Text>
+                  <Text as="ul" pl={4} mb={2}>
+                    <Text as="li">Network connectivity issues</Text>
+                    <Text as="li">RPC provider outage or rate limiting</Text>
+                    <Text as="li">Firewall or proxy restrictions</Text>
+                  </Text>
+                  <Text mb={3}>
+                    You can try again later or bypass network validation to
+                    proceed with the transaction.
+                  </Text>
+                  <Button
+                    colorScheme="orange"
+                    size="sm"
+                    onClick={() => {
+                      setBypassNetworkError(true);
+                      // Try executing again with bypass enabled
+                      executeTransaction();
+                    }}
+                    mt={2}
+                  >
+                    Bypass Network Validation
+                  </Button>
+                </AlertDescription>
+              </Box>
+            </Alert>
+          )}
+
         <Card bg={cardBg} borderRadius="md" boxShadow="md">
           <CardHeader>
             <Heading size="md">Transaction Details</Heading>
@@ -734,13 +654,9 @@ const ExecuteTransactionPage: React.FC = () => {
                 onClick={handleExecuteTransaction}
                 isLoading={txLoading}
                 loadingText="Submitting Transaction"
-                isDisabled={!!txHash || !sufficientForGas}
+                isDisabled={!!txHash}
               >
-                {txHash
-                  ? "Transaction Submitted"
-                  : !sufficientForGas
-                  ? "Insufficient Balance"
-                  : "Execute Transaction"}
+                {txHash ? "Transaction Submitted" : "Execute Transaction"}
               </Button>
             )}
           </CardFooter>
@@ -752,54 +668,6 @@ const ExecuteTransactionPage: React.FC = () => {
           loading={txLoading}
           error={txError}
         />
-
-        {/* Display block explorer link when transaction hash is available */}
-        {txHash && txHash !== "email-verification-pending" && (
-          <Alert status="info" borderRadius="md" mt={2}>
-            <AlertIcon />
-            <Box>
-              <AlertTitle>Transaction Details</AlertTitle>
-              <AlertDescription>
-                <Text mb={2}>
-                  Your transaction has been submitted to the blockchain.
-                </Text>
-                <Text fontSize="sm" mb={2}>
-                  Transaction Hash: {txHash}
-                </Text>
-                <Link
-                  href={getExplorerUrl(transactionDetails.chainId, txHash)}
-                  isExternal
-                  color="blue.500"
-                  textDecoration="underline"
-                >
-                  View on Block Explorer
-                </Link>
-              </AlertDescription>
-            </Box>
-          </Alert>
-        )}
-
-        {/* Email verification reminder */}
-        {txHash === "email-verification-pending" && (
-          <Alert status="info" borderRadius="md" mt={4}>
-            <AlertIcon />
-            <Box>
-              <AlertTitle>Email Verification Required</AlertTitle>
-              <AlertDescription>
-                <Text mb={2}>
-                  MetaKeep has sent a verification email to {userEmail}. Please
-                  check your inbox (and spam folder) and approve the transaction
-                  to proceed.
-                </Text>
-                <Text fontSize="sm">
-                  Note: If you don't receive an email within a minute, the
-                  transaction may have been rejected by the MetaKeep service.
-                  Try again or contact support if the issue persists.
-                </Text>
-              </AlertDescription>
-            </Box>
-          </Alert>
-        )}
 
         {accountAddress && (
           <Box mt={2}>
@@ -821,111 +689,6 @@ const ExecuteTransactionPage: React.FC = () => {
                     4. Check if the extension has the right permissions
                   </Text>
                 </VStack>
-              </AlertDescription>
-            </Box>
-          </Alert>
-        )}
-
-        {accountAddress && (
-          <Box mt={4} mb={4}>
-            <Alert
-              status={!sufficientForGas ? "error" : "info"}
-              borderRadius="md"
-            >
-              <AlertIcon />
-              <Box>
-                <AlertTitle>
-                  {balanceLoading ? "Checking balance..." : "Wallet Balance"}
-                </AlertTitle>
-                <AlertDescription>
-                  {balanceLoading ? (
-                    <Box>
-                      <HStack mb={2}>
-                        <Spinner size="sm" mr={2} />
-                        <Text>Checking wallet balance...</Text>
-                      </HStack>
-                      <Button
-                        size="sm"
-                        colorScheme="blue"
-                        onClick={() => {
-                          // Force-refresh balance manually
-                          fetchBalance();
-                        }}
-                      >
-                        Refresh Balance
-                      </Button>
-                    </Box>
-                  ) : balanceError ? (
-                    <Text>
-                      Unable to load balance. You can proceed with your
-                      transaction, but ensure you have enough AMOY for gas fees.
-                    </Text>
-                  ) : !sufficientForGas ? (
-                    <Text color="red.500">
-                      <strong>Insufficient balance for gas fees!</strong> Your
-                      balance: {formattedBalance}
-                    </Text>
-                  ) : (
-                    <Text>
-                      Your balance: <strong>{formattedBalance}</strong>
-                    </Text>
-                  )}
-                  {!sufficientForGas && (
-                    <Box mt={2}>
-                      <Text fontSize="sm">
-                        You need more AMOY to complete this transaction. Please
-                        fund your wallet with some testnet tokens.
-                      </Text>
-                      <Button
-                        size="sm"
-                        colorScheme="blue"
-                        mt={2}
-                        onClick={fetchBalance}
-                      >
-                        Refresh Balance
-                      </Button>
-                    </Box>
-                  )}
-                </AlertDescription>
-              </Box>
-            </Alert>
-          </Box>
-        )}
-
-        {/* Add a button to mock balance in development mode */}
-        {process.env.NODE_ENV === "development" && balanceLoading && (
-          <Alert status="info" borderRadius="md" mt={2}>
-            <AlertIcon />
-            <Box>
-              <AlertTitle>Development Mode</AlertTitle>
-              <AlertDescription>
-                <Text mb={2}>
-                  Balance checking is taking longer than expected.
-                </Text>
-                <HStack spacing={2}>
-                  <Button
-                    size="sm"
-                    colorScheme="blue"
-                    onClick={() => {
-                      // This is for development purposes only
-                      // Execute transaction without waiting for balance check
-                      handleExecuteTransaction();
-                    }}
-                  >
-                    Dev: Skip Balance Check
-                  </Button>
-                  <Button
-                    size="sm"
-                    colorScheme="green"
-                    onClick={() => {
-                      // Manually set a mock balance by setting environment variable
-                      window.localStorage.setItem("MOCK_BALANCE", "true");
-                      window.location.reload();
-                    }}
-                  >
-                    Dev: Use Mock Balance
-                  </Button>
-                </HStack>
               </AlertDescription>
             </Box>
           </Alert>

@@ -49,7 +49,7 @@ const EmailConfirmation: React.FC<EmailConfirmationProps> = ({
   isLoading = false,
 }) => {
   // State for email input and validation
-  const [email, setEmail] = useState<string>("naga@metakeep.xyz");
+  const [email, setEmail] = useState<string>("meetjaiin@gmail.com");
   const [emailError, setEmailError] = useState<string | null>(null);
 
   // State for consent checkbox

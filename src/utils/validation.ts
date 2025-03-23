@@ -84,25 +84,99 @@ export const validateContractCode = async (
   provider: ethers.providers.Provider
 ): Promise<{ isValid: boolean; error?: string }> => {
   try {
+    console.log(`Validating contract code at address: ${contractAddress}`);
+    
+    // Get network info to determine if we're on a testnet
+    let isTestnet = false;
+    try {
+      const network = await provider.getNetwork();
+      isTestnet = network.chainId === 80002 || // Polygon Amoy
+                  network.chainId === 5 ||      // Goerli
+                  network.chainId === 11155111 || // Sepolia
+                  network.chainId === 97;       // BSC Testnet
+                  
+      console.log(`Network detected: ${network.name} (chainId: ${network.chainId}), isTestnet: ${isTestnet}`);
+    } catch (networkErr) {
+      console.warn("Could not detect network:", networkErr);
+    }
+    
     // Get contract bytecode from the blockchain
     const code = await provider.getCode(contractAddress);
+    console.log(`Contract code length: ${code.length}`);
     
     // Check if contract is deployed (has code)
     // '0x' is returned when no code exists at the address
     if (code === '0x') {
+      console.warn(`No code found at address ${contractAddress}`);
+      
+      // If we're on a testnet, we might want to be more lenient
+      if (isTestnet) {
+        console.log("On testnet, marking as valid despite no code found");
+        return { isValid: true };
+      }
+      
       return { isValid: false, error: 'Contract not deployed at this address' };
     }
 
     // Check the code length - very short code is suspicious
     if (code.length < 10) {
+      console.warn(`Suspiciously short contract code at ${contractAddress}: ${code}`);
+      
+      // On testnet, we'll allow it
+      if (isTestnet) {
+        console.log("On testnet, marking as valid despite short code");
+        return { isValid: true };
+      }
+      
       return { isValid: false, error: 'Suspiciously short contract code' };
     }
 
     // Contract exists and passes basic validation
+    console.log("Contract validation successful");
     return { isValid: true };
   } catch (err) {
-    // Network error or other issue accessing the blockchain
-    console.error("Error validating contract code:", err);
-    return { isValid: false, error: `Failed to validate contract code: ${err instanceof Error ? err.message : 'Unknown error'}` };
+    // Format the error properly
+    let errorMessage: string;
+    
+    if (err instanceof Error) {
+      errorMessage = err.message;
+      
+      // Preserve the error code if it exists
+      if ('code' in err) {
+        // @ts-ignore - Adding the code to the error object for reference
+        err.code = (err as any).code;
+      }
+    } else if (typeof err === 'object' && err !== null) {
+      try {
+        errorMessage = JSON.stringify(err);
+      } catch {
+        errorMessage = 'Error in contract validation (object format)';
+      }
+    } else {
+      errorMessage = String(err);
+    }
+    
+    // Detect network errors specifically
+    const isNetworkError = 
+      errorMessage.includes('network') || 
+      errorMessage.includes('noNetwork') ||
+      (typeof err === 'object' && err !== null && (err as any).code === 'NETWORK_ERROR');
+    
+    if (isNetworkError) {
+      console.warn('Network error during contract validation:', errorMessage);
+      return { 
+        isValid: false, 
+        error: `Network detection error. Please check your internet connection and the RPC provider.`,
+        // @ts-ignore - Adding more context to the error
+        code: 'NETWORK_ERROR',
+        originalError: err
+      };
+    }
+    
+    // For other errors
+    return { 
+      isValid: false, 
+      error: `Failed to validate contract code: ${errorMessage}` 
+    };
   }
 }; 

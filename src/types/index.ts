@@ -47,17 +47,16 @@ export interface ContractConfig {
  * Extends ContractConfig with specific function details.
  */
 export interface TransactionDetails {
-  contractAddress: string;  // Contract address on the blockchain
-  abi: AbiFunction[];       // Contract ABI (only function entries)
-  chainId: number;          // Network chain ID
-  rpcUrl: string;           // RPC endpoint URL
-  functionName: string;     // Name of the function to call
-  functionParams: any[];    // Parameters to pass to the function
-  value?: string;           // ETH value to send with the transaction (for payable functions)
-  email?: string;           // User email for transaction verification
-  purpose?: string;         // Human-readable purpose of the transaction
-  reason?: string;          // Reason for transaction (needed by MetaKeep API)
-  bypassSecurity?: boolean; // Flag to bypass security warnings
+  contractAddress: string;
+  abi: any[];
+  functionName: string;
+  functionParams: any[];
+  chainId: number; // Supports Polygon Amoy Testnet (80002)
+  rpcUrl: string;
+  value?: string; // Optional - amount of ETH to send with transaction
+  email?: string; // Optional - email for transaction verification
+  bypassSecurity?: boolean; // Optional - flag to bypass security warnings
+  reason?: string; // Transaction reason shown to user (required by MetaKeep)
 }
 
 /**

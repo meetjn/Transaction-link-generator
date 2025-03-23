@@ -18,6 +18,7 @@ import Footer from "./components/Footer";
 import MetaKeepExtensionCheck from "./components/MetaKeepExtensionCheck";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import TransactionStatus from "./components/TransactionStatus";
+import TransactionStatusPage from "./pages/TransactionStatusPage";
 
 // Wrapper component to display errors
 const MetaKeepErrorHandler: React.FC<{ children: React.ReactNode }> = ({
@@ -81,6 +82,10 @@ function App() {
                   <Route
                     path="/execute/:transactionId"
                     element={<ExecuteTransactionPage />}
+                  />
+                  <Route
+                    path="/transaction/:txHash"
+                    element={<TransactionStatusPage />}
                   />
                 </Routes>
               </MetaKeepErrorHandler>

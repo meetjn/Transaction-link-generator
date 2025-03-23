@@ -229,7 +229,39 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
           user: {
             email: "meetjaiin@gmail.com", // Default email for authentication
           },
+          // Specify we want to use Polygon Amoy testnet by default
+          chainId: 80002, // Polygon Amoy testnet
+          chainConfig: {
+            "80002": {
+              chainId: "0x13882", // 80002 in hex
+              chainName: "Polygon Amoy Testnet",
+              nativeCurrency: {
+                name: "MATIC",
+                symbol: "MATIC",
+                decimals: 18,
+              },
+              rpcUrls: [
+                "https://polygon-amoy.g.alchemy.com/v2/dKz6QD3l7WEbD7xKNOhvHQNhjEQrh4gr",
+                "https://polygon-amoy.blockpi.network/v1/rpc/public",
+                "https://polygon-amoy.g.alchemy.com/v2/demo",
+                "https://rpc-amoy.polygon.technology",
+                "https://polygon-amoy-sequencer.optimism.io",
+              ],
+              blockExplorerUrls: ["https://www.oklink.com/amoy"],
+            },
+          },
         });
+
+        // Enable Web3 provider features if supported
+        try {
+          if (sdk.enableAsProvider) {
+            console.log("Enabling MetaKeep as Web3 provider...");
+            sdk.enableAsProvider();
+          }
+        } catch (providerErr) {
+          console.warn("Error enabling MetaKeep as provider:", providerErr);
+          // Continue anyway - this is optional functionality
+        }
 
         console.log("MetaKeep SDK initialized successfully:", sdk);
         setMetaKeep(sdk);
@@ -258,257 +290,110 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
       throw new Error("MetaKeep SDK not initialized");
     }
 
+    setConnecting(true);
+    setError(null);
+
     try {
-      // Check rate limit before connecting
-      if (!defaultRateLimiter.checkRateLimit()) {
-        throw new Error(`Rate limit exceeded. Please try again later.`);
+      // Re-initialize SDK with the email if provided
+      if (userEmail && userEmail !== "meetjaiin@gmail.com") {
+        console.log("Re-initializing SDK with provided email:", userEmail);
+        const appId =
+          process.env.REACT_APP_APP_ID ||
+          "3122c75e-8650-4a47-8376-d1dda7ef8c58";
+
+        const updatedSdk = new window.MetaKeep({
+          appId: appId,
+          user: {
+            email: userEmail,
+          },
+        });
+
+        setMetaKeep(updatedSdk);
+        // Brief delay to let SDK initialize
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
-      // First, check if we already have an account address
-      if (accountAddress && connected) {
-        console.log("Already connected with address:", accountAddress);
-        return;
-      }
+      console.log("Getting wallet directly as per documentation...");
+      try {
+        // According to the docs, we should directly call getWallet without parameters
+        // This will trigger the user verification process if needed
+        const walletResponse = await metaKeep.getWallet();
+        console.log("getWallet response:", walletResponse);
 
-      console.log("Connecting to MetaKeep wallet...");
-      setConnecting(true);
-      setError(null); // Clear any previous errors
-
-      // Try to initialize with user email if provided
-      if (userEmail && userEmail.trim() !== "") {
-        console.log("Initializing MetaKeep with user email:", userEmail);
-        // Re-initialize SDK with the provided email for better authentication
-        try {
-          const appId =
-            process.env.REACT_APP_APP_ID ||
-            "3122c75e-8650-4a47-8376-d1dda7ef8c58";
-          const updatedSdk = new window.MetaKeep({
-            appId: appId,
-            user: {
-              email: userEmail,
-            },
-          });
-          console.log("SDK re-initialized with user email");
-          setMetaKeep(updatedSdk);
-
-          // Give SDK a moment to initialize
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        } catch (error) {
-          console.warn("Failed to reinitialize SDK with email:", error);
-          // Continue with existing SDK instance
-        }
-      } else {
-        // If no email was provided, use a default email
-        console.log("Using default email for MetaKeep initialization");
-        try {
-          const appId =
-            process.env.REACT_APP_APP_ID ||
-            "3122c75e-8650-4a47-8376-d1dda7ef8c58";
-          const updatedSdk = new window.MetaKeep({
-            appId: appId,
-            user: {
-              email: "meetjaiin@gmail.com", // Default email
-            },
-          });
-          console.log("SDK re-initialized with default email");
-          setMetaKeep(updatedSdk);
-
-          // Give SDK a moment to initialize
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        } catch (error) {
-          console.warn("Failed to reinitialize SDK with default email:", error);
-        }
-      }
-
-      // Try getWallet first (primary method for SDK)
-      if (typeof metaKeep.getWallet === "function") {
-        try {
-          console.log("Attempting to get wallet with SDK getWallet method");
-          const walletResponse = await metaKeep.getWallet();
-          console.log("Wallet response:", walletResponse);
-
-          if (
-            walletResponse &&
-            walletResponse.wallet &&
-            walletResponse.wallet.ethAddress
-          ) {
-            const address = walletResponse.wallet.ethAddress;
-            console.log("Successfully obtained wallet address:", address);
-            setAccountAddress(address);
-            setConnected(true);
-            setConnecting(false);
-            return;
-          } else {
-            console.warn(
-              "getWallet succeeded but no wallet address found in response"
-            );
-          }
-        } catch (err) {
-          console.error("Error using getWallet:", err);
-
-          // Format error for easier detection of cancellations
-          let errMsg = "";
-          if (err instanceof Error) {
-            errMsg = err.message;
-          } else if (typeof err === "object" && err !== null) {
-            try {
-              errMsg = JSON.stringify(err);
-            } catch {
-              errMsg = "Unknown error object";
-            }
-          } else {
-            errMsg = String(err);
-          }
-
-          // Handle user cancellation
-          if (
-            errMsg.includes("OPERATION_CANCELLED") ||
-            errMsg.includes("cancelled") ||
-            errMsg.includes("canceled") ||
-            errMsg.includes("denied") ||
-            errMsg.includes("rejected") ||
-            errMsg.includes("User denied") ||
-            errMsg.includes("user closed")
-          ) {
-            setError("Connection cancelled by user. Please try again.");
-            setConnecting(false);
-            throw new Error("User cancelled the wallet connection");
-          }
-
-          // For other errors, try alternative connection methods
-          console.log("Will try alternative connection methods");
-        }
-      }
-
-      // Try alternative SDK connection method
-      if (typeof metaKeep.connect === "function") {
-        try {
-          console.log("Attempting connection with connect() method");
-          await metaKeep.connect();
-          console.log("Connect method succeeded, looking for address");
-
-          // Now try to get the address in various ways
-          let address = null;
-
-          // Check various properties where address might be found
-          if (metaKeep.address) {
-            address = metaKeep.address;
-          } else if (metaKeep.defaultAccount) {
-            address = metaKeep.defaultAccount;
-          } else if (typeof metaKeep.getAddress === "function") {
-            address = await metaKeep.getAddress();
-          } else if (typeof metaKeep.getAccounts === "function") {
-            const accounts = await metaKeep.getAccounts();
-            address = accounts && accounts.length > 0 ? accounts[0] : null;
-          }
-
-          if (address) {
-            console.log(
-              "Successfully obtained address via connect method:",
-              address
-            );
-            setAccountAddress(address);
-            setConnected(true);
-            setConnecting(false);
-            return;
-          } else {
-            console.warn("Connected but could not find wallet address");
-          }
-        } catch (err) {
-          console.error("Error using connect method:", err);
-
-          // Format error for easier detection of cancellations
-          let errMsg = "";
-          if (err instanceof Error) {
-            errMsg = err.message;
-          } else if (typeof err === "object" && err !== null) {
-            try {
-              errMsg = JSON.stringify(err);
-            } catch {
-              errMsg = "Unknown error object";
-            }
-          } else {
-            errMsg = String(err);
-          }
-
-          // Handle user cancellation
-          if (
-            errMsg.includes("OPERATION_CANCELLED") ||
-            errMsg.includes("cancelled") ||
-            errMsg.includes("canceled") ||
-            errMsg.includes("denied") ||
-            errMsg.includes("rejected")
-          ) {
-            setError("Connection cancelled by user. Please try again.");
-            setConnecting(false);
-            throw new Error("User cancelled the wallet connection");
-          }
-        }
-      }
-
-      // Wait and try one more time to see if connection happened asynchronously
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      if (!accountAddress) {
-        console.log("No address obtained, trying one more time");
-
-        // Try all possible ways to get the address
-        let finalAddress = null;
-
-        if (metaKeep.address) {
-          finalAddress = metaKeep.address;
-        } else if (metaKeep.defaultAccount) {
-          finalAddress = metaKeep.defaultAccount;
-        } else if (typeof metaKeep.getAddress === "function") {
-          try {
-            finalAddress = await metaKeep.getAddress();
-          } catch (e) {
-            console.error("Error in final getAddress attempt:", e);
-          }
-        } else if (typeof metaKeep.getAccounts === "function") {
-          try {
-            const accounts = await metaKeep.getAccounts();
-            finalAddress = accounts && accounts.length > 0 ? accounts[0] : null;
-          } catch (e) {
-            console.error("Error in final getAccounts attempt:", e);
-          }
-        } else if (typeof metaKeep.getWallet === "function") {
-          try {
-            const wallet = await metaKeep.getWallet();
-            finalAddress =
-              wallet && wallet.wallet ? wallet.wallet.ethAddress : null;
-          } catch (e) {
-            console.error("Error in final getWallet attempt:", e);
-          }
-        }
-
-        if (finalAddress) {
-          console.log("Finally obtained address:", finalAddress);
-          setAccountAddress(finalAddress);
+        // Check if we received a proper wallet response with an address
+        if (
+          walletResponse &&
+          walletResponse.status === "SUCCESS" &&
+          walletResponse.wallet &&
+          walletResponse.wallet.ethAddress
+        ) {
+          const address = walletResponse.wallet.ethAddress;
+          console.log("Successfully obtained wallet address:", address);
+          setAccountAddress(address);
           setConnected(true);
           setConnecting(false);
           return;
+        } else {
+          console.log("Wallet response format unexpected:", walletResponse);
+          // If successful but no wallet, the user might need to complete verification
+          if (walletResponse && walletResponse.status === "SUCCESS") {
+            throw new Error(
+              "Wallet verification may be required. Please check your email."
+            );
+          } else {
+            throw new Error("Could not retrieve wallet. Please try again.");
+          }
         }
-      }
+      } catch (err) {
+        console.error("Error in getWallet flow:", err);
 
-      // If we reached here, we failed to get an address
-      setConnecting(false);
-      if (!accountAddress) {
-        const errorMsg =
-          "Failed to obtain wallet address. Please try again with your email address.";
-        setError(errorMsg);
-        throw new Error(errorMsg);
+        // Specific MetaKeep error handling
+        if (typeof err === "object" && err !== null) {
+          // If we have a status field, handle specific MetaKeep error codes
+          if (err.status) {
+            switch (err.status) {
+              case "USER_CONSENT_DENIED":
+                throw new Error("User denied wallet access request.");
+              case "EXPIRED_TOKEN":
+                throw new Error(
+                  "Authentication token expired. Please try again."
+                );
+              case "INVALID_REQUEST":
+                throw new Error(
+                  "Invalid wallet request. Please try with a different email."
+                );
+              default:
+                throw err; // Rethrow other status errors
+            }
+          }
+
+          // Generic error handling if no status
+          if (err.message) {
+            throw new Error(err.message);
+          }
+        }
+
+        // Fallback error handling
+        throw err;
       }
     } catch (err) {
-      console.error("Connection error:", err);
+      console.error("Wallet connection error:", err);
 
-      // Handle specific errors
+      // Format error for UI
+      let errorMessage: string;
       if (err instanceof Error) {
-        setError(err.message);
+        errorMessage = err.message;
+      } else if (typeof err === "object" && err !== null) {
+        try {
+          errorMessage = JSON.stringify(err);
+        } catch (e) {
+          errorMessage = "Unknown error format";
+        }
       } else {
-        setError("Unknown error connecting to MetaKeep");
+        errorMessage = String(err);
       }
 
+      setError(errorMessage);
       setConnected(false);
       setConnecting(false);
       throw err;
@@ -666,6 +551,7 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
       console.log("Signing message with MetaKeep...");
 
       let message: string;
+      let reason = "Message Signing";
 
       // Handle both string messages and object formats
       if (typeof messageOrOptions === "string") {
@@ -673,6 +559,7 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
         console.log("Signing message:", message);
       } else if (messageOrOptions && typeof messageOrOptions === "object") {
         message = messageOrOptions.message;
+        reason = messageOrOptions.reason || reason;
         console.log("Signing message from object:", message);
       } else {
         throw new Error(
@@ -680,8 +567,9 @@ export const MetaKeepProvider: React.FC<MetaKeepProviderProps> = ({
         );
       }
 
-      // Following the documentation pattern
-      const response = await metaKeep.signMessage(message);
+      // Following the documentation pattern for signMessage
+      const response = await metaKeep.signMessage(message, reason);
+
       console.log("Sign message response:", response);
 
       // Return signature if the operation was successful

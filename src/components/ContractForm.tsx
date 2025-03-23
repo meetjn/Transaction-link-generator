@@ -27,8 +27,10 @@ interface ContractFormProps {
 const ContractForm: React.FC<ContractFormProps> = ({ onContractSubmit }) => {
   const [address, setAddress] = useState("");
   const [abiString, setAbiString] = useState("");
-  const [chainId, setChainId] = useState<number>(137); // Default to Polygon
-  const [rpcUrl, setRpcUrl] = useState<string>("https://polygon-rpc.com");
+  const [chainId, setChainId] = useState<number>(80002); // Default to Polygon Amoy Testnet
+  const [rpcUrl, setRpcUrl] = useState<string>(
+    "https://polygon-amoy.g.alchemy.com/v2/dKz6QD3l7WEbD7xKNOhvHQNhjEQrh4gr"
+  );
   const [errors, setErrors] = useState<{
     address?: string;
     abi?: string;
@@ -54,38 +56,17 @@ const ContractForm: React.FC<ContractFormProps> = ({ onContractSubmit }) => {
     { id: 42161, name: "Arbitrum One", rpc: "https://arb1.arbitrum.io/rpc" },
     { id: 10, name: "Optimism", rpc: "https://mainnet.optimism.io" },
     {
-      id: 80001,
-      name: "Polygon Mumbai",
-      rpc: "https://rpc-mumbai.maticvigil.com",
+      id: 80002,
+      name: "Polygon Amoy Testnet",
+      rpc: "https://polygon-amoy.g.alchemy.com/v2/dKz6QD3l7WEbD7xKNOhvHQNhjEQrh4gr",
     },
-    {
-      id: 11155111,
-      name: "Sepolia",
-      rpc: "https://sepolia.infura.io/v3/your-project-id",
-    },
-    {
-      id: 5,
-      name: "Goerli",
-      rpc: "https://goerli.infura.io/v3/your-project-id",
-    },
-    { id: -1, name: "Custom Network", rpc: "" }, // Special entry for custom networks
   ];
-
-  // State to track if a custom network is selected
-  const [isCustomNetwork, setIsCustomNetwork] = useState(false);
 
   // Update RPC URL when network changes
   useEffect(() => {
     const network = networks.find((n) => n.id === chainId);
     if (network) {
-      if (network.id === -1) {
-        // Custom network selected, don't change RPC but show the field
-        setIsCustomNetwork(true);
-      } else {
-        // Standard network selected, update RPC and hide the field
-        setRpcUrl(network.rpc);
-        setIsCustomNetwork(false);
-      }
+      setRpcUrl(network.rpc);
     }
   }, [chainId]);
 
@@ -117,9 +98,9 @@ const ContractForm: React.FC<ContractFormProps> = ({ onContractSubmit }) => {
       newErrors.chainId = "Chain ID is required";
     }
 
-    // Only validate RPC URL if using a custom network
-    if (isCustomNetwork && !rpcUrl) {
-      newErrors.rpcUrl = "RPC URL is required for custom networks";
+    // We still validate rpcUrl even though the field is hidden
+    if (!rpcUrl) {
+      newErrors.rpcUrl = "RPC URL is required";
     }
 
     setErrors(newErrors);
@@ -208,20 +189,6 @@ const ContractForm: React.FC<ContractFormProps> = ({ onContractSubmit }) => {
             ))}
           </Select>
           <FormErrorMessage>{errors.chainId}</FormErrorMessage>
-        </FormControl>
-
-        <FormControl
-          isRequired
-          isInvalid={!!errors.rpcUrl}
-          display={isCustomNetwork ? "block" : "none"}
-        >
-          <FormLabel>RPC URL</FormLabel>
-          <Input
-            placeholder="https://..."
-            value={rpcUrl}
-            onChange={(e) => setRpcUrl(e.target.value)}
-          />
-          <FormErrorMessage>{errors.rpcUrl}</FormErrorMessage>
         </FormControl>
 
         <Button type="submit" colorScheme="blue" size="lg">

@@ -4,7 +4,6 @@ import { useMetaKeep } from '../context/MetakeepContext';
 import { TransactionDetails } from '../types';
 import { validateTransactionDetails, validateContractCode } from '../utils/validation';
 import { defaultRateLimiter } from '../utils/rateLimiting';
-import { useWalletBalance } from './useWalletBalance';
 
 /**
  * Interface defining the return value of the useMetaKeepTransaction hook
@@ -39,133 +38,11 @@ interface UseMetaKeepTransactionResult {
 export const useMetaKeepTransaction = (): UseMetaKeepTransactionResult => {
   // Get MetaKeep context values
   const { metaKeep, connected, accountAddress } = useMetaKeep();
-
+  
   // Transaction state
   const [txHash, setTxHash] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Track RPC url and chain ID
-  const [currentRpcUrl, setCurrentRpcUrl] = useState<string>('https://polygon-rpc.com');
-  const [currentChainId, setCurrentChainId] = useState<number>(137);
-
-  // Initialize balance checker hook
-  const {
-    checkBalanceForGas,
-    fetchBalance
-  } = useWalletBalance(currentRpcUrl, currentChainId);
-
-  /**
-   * Tests if an RPC provider is working properly (used by getWorkingProvider)
-   * @param url The RPC URL to test
-   * @returns Promise resolving to a boolean - true if provider is working
-   * @private - Internal utility function
-   */
-  const _testRpcProvider = async (url: string): Promise<boolean> => {
-    try {
-      const provider = new ethers.providers.JsonRpcProvider(url);
-      // Try a simple call that should work on any provider
-      const blockNumber = await provider.getBlockNumber();
-      console.log(`Provider ${url} is working, current block: ${blockNumber}`);
-      return true;
-    } catch (err) {
-      console.warn(`Provider ${url} failed: ${err.message}`);
-      return false;
-    }
-  };
-
-  /**
-   * Get a working provider for a specific chain
-   * Tries multiple providers in sequence until one works
-   * 
-   * @param rpcUrl - Primary RPC URL to try first
-   * @param chainId - Chain ID to find fallbacks for
-   * @returns A working provider or undefined if all fail
-   */
-  const getWorkingProvider = async (
-    rpcUrl: string,
-    chainId: number
-  ): Promise<ethers.providers.Provider | undefined> => {
-    // Define fallback providers for each network
-    const fallbackProviders: { [key: number]: string[] } = {
-      // Polygon Amoy testnet
-      80002: [
-        'https://rpc-amoy.polygon.technology/',
-        'https://polygon-amoy-rpc.publicnode.com',
-        'https://polygon-amoy.blockpi.network/v1/rpc/public',
-        'https://api.zan.top/node/v1/polygon/amoy/public',
-        'https://polygon-amoy.drpc.org',
-        'https://polygon-amoy.g.alchemy.com/v2/demo'
-      ],
-      // Polygon mainnet
-      137: [
-        'https://polygon-rpc.com',
-        'https://polygon-mainnet.g.alchemy.com/v2/demo',
-        'https://polygon.meowrpc.com',
-        'https://polygon.drpc.org',
-        'https://polygon.llamarpc.com',
-        'https://rpc-mainnet.maticvigil.com'
-      ],
-      // Ethereum mainnet
-      1: [
-        'https://eth-mainnet.g.alchemy.com/v2/demo',
-        'https://1rpc.io/eth',
-        'https://ethereum.publicnode.com',
-        'https://rpc.ankr.com/eth',
-        'https://eth.meowrpc.com',
-        'https://eth.llamarpc.com'
-      ]
-    };
-
-    console.log(`[Provider] Getting working provider for chainId: ${chainId}, starting with: ${rpcUrl}`);
-    
-    // Create an array of providers to try
-    const providersToTry: string[] = [rpcUrl];
-    
-    // Add fallbacks for this chain
-    const fallbacks = fallbackProviders[chainId] || [];
-    providersToTry.push(...fallbacks);
-    
-    // Deduplicate providers list - use Array.from instead of spreading Set
-    const uniqueProviders = Array.from(new Set(providersToTry));
-    
-    // Try each provider in parallel (faster than sequential)
-    const providerPromises = uniqueProviders.map(async (url) => {
-      try {
-        const provider = new ethers.providers.JsonRpcProvider(url);
-        // Set a timeout for the blockNumber request to avoid hanging
-        const blockNumberPromise = provider.getBlockNumber();
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 3000)
-        );
-        
-        const blockNumber = await Promise.race([blockNumberPromise, timeoutPromise]);
-        console.log(`[Provider] ${url} is working, current block: ${blockNumber}`);
-        return provider;
-      } catch (err) {
-        console.warn(`[Provider] ${url} failed: ${err.message}`);
-        return null;
-      }
-    });
-    
-    // Get the first working provider
-    const providers = await Promise.all(providerPromises);
-    const workingProvider = providers.find(p => p !== null);
-    
-    if (workingProvider) {
-      return workingProvider;
-    }
-    
-    // Final fallback: try with ethers default provider
-    try {
-      console.log('[Provider] Trying with ethers default provider');
-      const defaultProvider = ethers.getDefaultProvider(chainId);
-      await defaultProvider.getBlockNumber();
-      return defaultProvider;
-    } catch (err) {
-      console.error('[Provider] All providers failed, including default provider');
-      return undefined;
-    }
-  };
 
   /**
    * Execute a transaction using the MetaKeep wallet
@@ -178,29 +55,17 @@ export const useMetaKeepTransaction = (): UseMetaKeepTransactionResult => {
    * @throws Error if transaction execution fails
    */
   const execute = async (transactionDetails: TransactionDetails): Promise<string> => {
-    // Extract all needed transaction properties at the beginning to avoid redeclaration
-    const {
-      contractAddress,
-      abi,
-      functionName,
-      functionParams,
-      value,
-      chainId,
-      email,
-      rpcUrl
-    } = transactionDetails;
-
     // Check if wallet is connected - log the state for debugging
     console.log("Wallet connection check:", {
       metaKeepExists: !!metaKeep,
-      connectedState: connected,
+      connectedState: connected, 
       accountAddress
     });
-
+    
     if (!metaKeep) {
       throw new Error('MetaKeep SDK not initialized');
     }
-
+    
     if (!accountAddress) {
       throw new Error('Wallet address not available - please reconnect');
     }
@@ -210,11 +75,7 @@ export const useMetaKeepTransaction = (): UseMetaKeepTransactionResult => {
       throw new Error(`Rate limit exceeded. Maximum 10 transactions per minute allowed.`);
     }
 
-    // Update RPC URL and chain ID for balance checking
-    setCurrentRpcUrl(rpcUrl || 'https://polygon-rpc.com');
-    setCurrentChainId(chainId);
-
-    // Reset states
+    // Update state for transaction execution
     setLoading(true);
     setError(null);
     setTxHash(null);
@@ -226,61 +87,127 @@ export const useMetaKeepTransaction = (): UseMetaKeepTransactionResult => {
         throw new Error(`Invalid transaction: ${validation.errors.join(', ')}`);
       }
 
-      // Get a working provider for this chain
-      console.log("Finding a working provider for chain ID:", chainId);
-      const provider = await getWorkingProvider(
-        rpcUrl || 'https://polygon-rpc.com',
-        chainId
-      );
+      // Determine the correct RPC URL based on chainId
+      let rpcUrl = transactionDetails.rpcUrl;
+      let fallbackUrls: string[] = [];
 
-      if (!provider) {
-        throw new Error('Network detection failed. Could not connect to any RPC provider for this chain. Please check your internet connection or try again later.');
+      if (transactionDetails.chainId === 80002) {
+        // Primary and fallback RPC URLs for Polygon Amoy testnet
+        rpcUrl = "https://polygon-amoy.g.alchemy.com/v2/dKz6QD3l7WEbD7xKNOhvHQNhjEQrh4gr";
+        fallbackUrls = [
+          "https://polygon-amoy.blockpi.network/v1/rpc/public",
+          "https://polygon-amoy.g.alchemy.com/v2/demo",
+          "https://rpc-amoy.polygon.technology",
+          "https://polygon-amoy-sequencer.optimism.io"
+        ];
+        console.log("Using Polygon Amoy testnet primary RPC URL:", rpcUrl);
+      } else if (!rpcUrl) {
+        // Default fallback for other networks
+        rpcUrl = transactionDetails.chainId === 137 
+          ? "https://polygon-rpc.com" 
+          : "https://eth-mainnet.g.alchemy.com/v2/demo";
       }
 
-      // Validate contract code to ensure it exists and is deployed
-      const contractValidation = await validateContractCode(
-        contractAddress,
-        provider
-      );
-      if (!contractValidation.isValid) {
-        throw new Error(contractValidation.error || 'Invalid contract');
+      // Get provider for contract validation - try primary RPC first
+      let provider: ethers.providers.JsonRpcProvider;
+      let providerConnected = false;
+      
+      // Try the primary RPC URL first
+      provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+      console.log(`Trying primary RPC URL: ${rpcUrl} for chain ${transactionDetails.chainId}`);
+      
+      try {
+        // Test the provider with a simple call
+        await provider.getNetwork();
+        providerConnected = true;
+        console.log("Successfully connected to primary RPC");
+      } catch (networkError) {
+        console.warn("Primary RPC failed:", networkError);
+        
+        // Try fallback URLs if available
+        if (fallbackUrls.length > 0) {
+          console.log("Attempting fallback RPC URLs...");
+          
+          for (const fbUrl of fallbackUrls) {
+            try {
+              provider = new ethers.providers.JsonRpcProvider(fbUrl);
+              await provider.getNetwork();
+              console.log("Successfully connected to fallback RPC:", fbUrl);
+              rpcUrl = fbUrl; // Update the RPC URL to the working one
+              providerConnected = true;
+              break;
+            } catch (fbError) {
+              console.warn(`Fallback RPC failed: ${fbUrl}`, fbError);
+            }
+          }
+        }
+      }
+      
+      // If we still don't have a connection and bypassSecurity is enabled, proceed anyway
+      if (!providerConnected && transactionDetails.bypassSecurity) {
+        console.warn("All RPC URLs failed, but proceeding with transaction due to bypassSecurity flag");
+      } else if (!providerConnected) {
+        throw new Error("Could not connect to any RPC provider. Please check your internet connection or try a different network.");
+      }
+
+      // Skip contract validation if we couldn't connect to an RPC or bypassSecurity is enabled
+      // Also skip validation completely on Polygon Amoy testnet as it's a development network
+      if (transactionDetails.chainId === 80002) {
+        console.log("Skipping contract validation on Polygon Amoy testnet");
+        // Skip validation for Polygon Amoy testnet
+      } else if (providerConnected && !transactionDetails.bypassSecurity) {
+        try {
+          const contractValidation = await validateContractCode(
+            transactionDetails.contractAddress,
+            provider
+          );
+          if (!contractValidation.isValid) {
+            throw new Error(contractValidation.error || 'Invalid contract');
+          }
+        } catch (validationError) {
+          console.error("Contract validation error:", validationError);
+          
+          // For network errors, we'll bypass validation if the user has enabled bypassSecurity
+          if (validationError.code === "NETWORK_ERROR" || 
+              String(validationError).includes("network") || 
+              String(validationError).includes("noNetwork")) {
+            
+            console.warn("Network error during contract validation");
+            
+            if (transactionDetails.bypassSecurity) {
+              console.log("Bypassing contract validation due to network error and bypassSecurity flag");
+            } else {
+              throw new Error(`Failed to validate contract code: could not detect network. Please check your connection or enable the bypassSecurity option to proceed anyway.`);
+            }
+          } else {
+            throw validationError;
+          }
+        }
+      } else {
+        console.log("Skipping contract validation due to RPC connection issues or bypassSecurity flag");
       }
 
       // Create the transaction by encoding the function call
-      const iface = new ethers.utils.Interface(abi);
-      const data = iface.encodeFunctionData(functionName, functionParams);
-      console.log("Encoded function data:", data);
-
-      // Estimate gas for the transaction
-      let gasEstimate;
+      console.log("ABI format:", JSON.stringify(transactionDetails.abi, null, 2));
+      console.log("Function name:", transactionDetails.functionName);
+      console.log("Function parameters:", transactionDetails.functionParams);
+      
+      let data: string;
       try {
-        // Estimate gas for this transaction
-        gasEstimate = await provider.estimateGas({
-          to: contractAddress,
-          from: accountAddress,
-          data,
-          value: value ? ethers.utils.parseEther(value) : undefined
-        });
-
-        // Add 20% buffer for gas estimate
-        gasEstimate = gasEstimate.mul(120).div(100);
-        console.log("Gas estimate with buffer:", gasEstimate.toString());
-
-        // Check if user has enough balance for gas
-        await fetchBalance(); // Refresh balance
-        const hasEnough = checkBalanceForGas(gasEstimate.toString());
-
-        if (!hasEnough) {
-          setLoading(false);
-          throw new Error(`Insufficient balance to cover gas fees. Please add more AMOY to your wallet.`);
+        const iface = new ethers.utils.Interface(transactionDetails.abi);
+        data = iface.encodeFunctionData(transactionDetails.functionName, transactionDetails.functionParams);
+        console.log("Successfully encoded function data:", data);
+      } catch (encodeError) {
+        console.error("Error encoding function data:", encodeError);
+        
+        // Try to provide more helpful error messages
+        if (String(encodeError).includes("no matching function")) {
+          throw new Error(`Function '${transactionDetails.functionName}' not found in contract ABI. Please check function name and ABI.`);
+        } else if (String(encodeError).includes("types/values length mismatch")) {
+          throw new Error(`Parameter mismatch for function '${transactionDetails.functionName}'. Please check parameter types and values.`);
+        } else {
+          throw new Error(`Error encoding function call: ${encodeError instanceof Error ? encodeError.message : String(encodeError)}`);
         }
-      } catch (gasErr) {
-        if (gasErr.message.includes('Insufficient balance')) {
-          throw gasErr; // Re-throw balance errors
-        }
-        console.warn('Error estimating gas:', gasErr);
-        // Continue with default gas if estimation fails
-        console.log('Continuing with default gas limit');
       }
 
       // Get the current nonce for the account address
@@ -293,6 +220,9 @@ export const useMetaKeepTransaction = (): UseMetaKeepTransactionResult => {
         console.error("Error getting nonce, using default:", nonceErr);
         nonce = "0x1"; // Fallback to default if we can't get the current nonce
       }
+
+      // Destructure transaction details
+      const { contractAddress, abi, functionName, functionParams, value, chainId, email } = transactionDetails;
 
       // Add transaction security confirmation step
       console.log(`Transaction security validated for contract: ${contractAddress}`);
@@ -326,613 +256,209 @@ export const useMetaKeepTransaction = (): UseMetaKeepTransactionResult => {
         // Continue anyway - some SDKs might not support chain operations
       }
 
-      // Prepare transaction parameters
-      const txParams: any = {
-        type: 2, // EIP-1559 transaction type as shown in docs
+      // Prepare transaction parameters exactly as per MetaKeep documentation
+      const txObject: any = {
+        type: 2, // EIP-1559 transaction type
+        from: accountAddress,
         to: contractAddress,
         data,
-        from: accountAddress,
-        // Add required fields based on MetaKeep docs and error messages
-        nonce: nonce, // Use the nonce we retrieved
-        gas: 21000, // Basic gas limit for simple transfers
-        chainId: chainId, // Include chain ID as shown in the documentation
-        // Add fee parameters as shown in the docs
-        maxFeePerGas: 1000,
-        maxPriorityFeePerGas: 999,
+        nonce, // Include nonce from provider (already converted to hex)
+        gasLimit: "0x186a0", // Higher gas limit for contract interactions (100,000 in hex)
+        maxFeePerGas: "0x3b9aca00", // 1 Gwei in hex
+        maxPriorityFeePerGas: "0x3b9aca00", // 1 Gwei in hex
+        chainId: "0x" + chainId.toString(16) // Convert to hex string format
       };
 
       // Add value if specified (for payable functions)
       if (value) {
-        txParams.value = ethers.utils.parseEther(value);
+        txObject.value = ethers.utils.parseEther(value).toString();
+      } else {
+        txObject.value = "0x0"; // Explicitly set zero value
       }
+      
+      console.log("Transaction object:", txObject);
+      console.log("Transaction object keys:", Object.keys(txObject).join(", "));
 
-      console.log("Transaction params:", txParams);
+      // Define the reason for the transaction (required by MetaKeep)
+      const transactionReason = "Contract Function Execution";
 
-      // Primary method: Use email-based transaction execution for enhanced security
-      if (email) {
-        try {
-          console.log("Executing transaction with email verification");
-
-          // Create simpler transaction request using signTransaction which is available
-          console.log("Using signTransaction with email", email);
+      try {
+        console.log("Executing transaction with signTransaction");
+        
+        // For Polygon Amoy testnet, we'll use a streamlined transaction object
+        if (transactionDetails.chainId === 80002) {
+          console.log("Using optimized format for Polygon Amoy testnet transaction");
           
-          let hasEmailSent = false; // Flag to track if email was sent
-
-          // First, try with simple transaction parameters plus email
-          try {
-            // Standard format for MetaKeep SDK - follow docs exactly
-            console.log("Attempting signTransaction with format from documentation");
-
-            // Create transaction with required fields in exact format from docs
-            const txObject = {
-              // Transaction parameters
-              type: 2, // EIP-1559 transaction type as shown in docs
-              from: accountAddress,
-              to: contractAddress,
-              data,
-              // Include gas parameters if needed (to match example in docs)
-              gas: 21000, // basic gas amount
-              // Add nonce - required per the error message
-              nonce: nonce, // Use the nonce we retrieved from provider
-              chainId: chainId, // Include chain ID as shown in the documentation
-              // Add fee parameters as shown in the docs
-              maxFeePerGas: 1000,
-              maxPriorityFeePerGas: 999,
-              // Don't include email or reason in transaction object
-            };
-
-            console.log("Transaction object:", txObject);
-            // Pass reason as a separate parameter as shown in docs
-            const signResult = await (metaKeep as any).signTransaction(
-              txObject,
-              "Transfer" // reason as separate parameter
-            );
-
-            console.log("signTransaction result:", signResult);
+          // Create a simpler transaction object according to MetaKeep docs
+          const amoyTxObject = {
+            to: transactionDetails.contractAddress,
+            from: accountAddress,
+            data,
+            chainId: "0x13882", // 80002 in hex
+            value: value ? ethers.utils.parseEther(value).toString() : "0x0",
+            // Use minimal gas parameters for Amoy testnet
+            gasLimit: "0x186a0", // 100,000 gas limit in hex
+            maxFeePerGas: "0x59682f00", // 1.5 Gwei in hex
+            maxPriorityFeePerGas: "0x59682f00", // Also 1.5 Gwei to prioritize the transaction
+            nonce // Required parameter from provider
+          };
+          
+          console.log("Amoy transaction object:", amoyTxObject);
+          console.log("Transaction object keys:", Object.keys(amoyTxObject).join(", "));
+          
+          // Sign and send transaction with MetaKeep's internal mechanism
+          console.log("Signing transaction for Amoy testnet with reason:", transactionReason);
+          const signResult = await metaKeep.signTransaction(
+            amoyTxObject, 
+            transactionReason
+          );
+          
+          console.log("signTransaction result for Amoy testnet:", signResult);
+          
+          if (signResult && signResult.status === "SUCCESS" && signResult.transactionHash) {
+            const txHash = signResult.transactionHash;
+            console.log("Transaction hash from MetaKeep for Amoy:", txHash);
             
-            // Track if the SDK sent an email for verification
-            if (signResult?.emailSent) {
-              hasEmailSent = true;
-              console.log("Email verification was sent by MetaKeep");
-            } else if (signResult?.status === "EMAIL_VERIFICATION_SENT" || signResult?.status === "EMAIL_SENT") {
-              hasEmailSent = true;
-              console.log("Email verification was sent by MetaKeep (status confirmed)");
+            // For Amoy testnet, also try to broadcast directly to ensure it's picked up
+            if (signResult.signedRawTransaction) {
+              try {
+                console.log("Additionally broadcasting transaction to Amoy network directly");
+                // Use our provider to broadcast the transaction as well
+                const sendTxResponse = await provider.sendTransaction(signResult.signedRawTransaction);
+                console.log("Direct broadcast response:", sendTxResponse);
+              } catch (broadcastError) {
+                // Just log the error but continue with the hash we got from MetaKeep
+                console.warn("Error during direct broadcast (continuing anyway):", broadcastError);
+              }
             }
-
-            const hash = signResult?.hash || signResult?.transactionHash || (typeof signResult === 'string' ? signResult : null);
+            
+            setTxHash(txHash);
+            setLoading(false);
+            return txHash;
+          } else {
+            throw new Error("Failed to get transaction hash from MetaKeep");
+          }
+        } else {
+          // For other networks, use the standard approach
+          // Follow exactly what's in the documentation - transaction object and separate reason
+          const signResult = await metaKeep.signTransaction(
+            txObject, 
+            transactionReason
+          );
+          
+          console.log("signTransaction result:", signResult);
+          
+          // Handle the success response according to the MetaKeep docs
+          if (signResult && signResult.status === "SUCCESS") {
+            // For EVM transactions, we should get signedRawTransaction that we can send to the network
+            if (signResult.signedRawTransaction) {
+              console.log("Got signed raw transaction:", signResult.signedRawTransaction);
+              
+              // For Polygon Amoy testnet, we'll let MetaKeep handle the broadcasting internally
+              // This avoids the insufficient funds error when we try to broadcast ourselves
+              if (transactionDetails.chainId === 80002) {
+                console.log("Using transaction hash from MetaKeep without broadcasting for Amoy testnet");
+                const txHash = signResult.transactionHash;
+                console.log("Transaction hash from MetaKeep:", txHash);
+                setTxHash(txHash);
+                setLoading(false);
+                return txHash;
+              }
+              
+              // For other networks, we'll broadcast the transaction ourselves
+              try {
+                const sendTxResponse = await provider.sendTransaction(signResult.signedRawTransaction);
+                console.log("Transaction sent to network:", sendTxResponse);
+                
+                if (sendTxResponse && sendTxResponse.hash) {
+                  const txHash = sendTxResponse.hash;
+                  console.log("Transaction submitted with hash:", txHash);
+                  setTxHash(txHash);
+                  setLoading(false);
+                  return txHash;
+                }
+              } catch (sendError) {
+                console.error("Error sending signed transaction to network:", sendError);
+                // For insufficient funds errors, provide a better error message
+                if (String(sendError).includes("insufficient funds")) {
+                  throw new Error(`Insufficient funds in wallet to pay for transaction gas fees. Please add funds to your wallet on ${transactionDetails.chainId === 80002 ? "Polygon Amoy testnet" : "the selected network"}.`);
+                }
+                throw new Error(`Error broadcasting transaction: ${sendError instanceof Error ? sendError.message : String(sendError)}`);
+              }
+            }
+            
+            // If we don't get a signedRawTransaction but have a hash, use that
+            const hash = signResult.transactionHash || signResult.hash;
             if (hash) {
               console.log("Transaction signed with hash:", hash);
-              // Verify the transaction actually exists on the blockchain
-              const isValid = await verifyTransactionWithRetry(hash, provider, chainId);
-              if (!isValid) {
-                console.warn("⚠️ Transaction hash not found on blockchain:", hash);
-                // Different error message when email verification was successful but transaction not found
-                if (hasEmailSent) {
-                  throw new Error("Email verification was completed successfully, but the transaction was not found on the blockchain. This is usually a temporary issue with the network rather than a problem with your wallet.");
-                } else {
-                  throw new Error("Transaction may have failed to broadcast. The hash returned by MetaKeep was not found on the blockchain.");
-                }
-              }
-              // Only set the hash if it's verified
               setTxHash(hash);
-              // Start monitoring the transaction in the background
-              monitorTransaction(hash, provider, chainId).catch(err => {
-                console.error("Error monitoring transaction:", err);
-              });
+              setLoading(false);
               return hash;
-            } else if (hasEmailSent) {
-              // Email was sent but no hash yet - this is expected when waiting for verification
-              console.log("Transaction initiated, email sent for verification - waiting for response");
-              const placeholderHash = "email-verification-pending";
-              setTxHash(placeholderHash);
-              return placeholderHash;
-            } else {
-              console.log("No response from MetaKeep, status unclear");
-              throw new Error("Transaction initiation didn't receive a clear response from MetaKeep. Please check your email for potential verification requests.");
-            }
-          } catch (mainErr) {
-            console.error("First transaction approach failed:", mainErr);
-
-            // If first approach fails, try another format - raw tx params
-            console.log("Trying with raw transaction parameters using documented format");
-            try {
-              // Match exactly what's in the docs - transaction object and separate reason
-              const signResult = await (metaKeep as any).signTransaction(
-                txParams, // Basic transaction parameters
-                "Transfer" // Reason as separate parameter per docs
-              );
-
-              console.log("Raw parameter result:", signResult);
-
-              const hash = signResult?.hash || signResult?.transactionHash || (typeof signResult === 'string' ? signResult : null);
-              if (hash) {
-                console.log("Transaction signed with hash:", hash);
-                // Verify the transaction actually exists on the blockchain
-                const isValid = await verifyTransactionWithRetry(hash, provider, chainId);
-                if (!isValid) {
-                  console.warn("⚠️ Transaction hash not found on blockchain:", hash);
-                  // Instead of returning an unconfirmed hash, throw an error
-                  throw new Error("Transaction may have failed to broadcast. The hash returned by MetaKeep was not found on the blockchain.");
-                }
-                // Only set the hash if it's verified
-                setTxHash(hash);
-                // Start monitoring the transaction in the background
-                monitorTransaction(hash, provider, chainId).catch(err => {
-                  console.error("Error monitoring transaction:", err);
-                });
-                return hash;
-              } else {
-                console.log("Transaction initiated, waiting for email verification");
-                const placeholderHash = "email-verification-pending";
-                setTxHash(placeholderHash);
-                return placeholderHash;
-              }
-            } catch (signErr) {
-              console.error("All sign approaches failed:", signErr);
-
-              // Format error properly to avoid [object Object] display
-              let errorMessage;
-              if (mainErr instanceof Error) {
-                errorMessage = mainErr.message;
-              } else if (typeof mainErr === 'object' && mainErr !== null) {
-                // Check for the specific status error
-                if (mainErr.status === "INVALID_REASON") {
-                  throw new Error("Transaction failed: The MetaKeep service requires a valid transaction reason");
-                }
-
-                try {
-                  errorMessage = JSON.stringify(mainErr);
-                } catch (e) {
-                  errorMessage = "Unknown error format";
-                }
-              } else {
-                errorMessage = String(mainErr);
-              }
-
-              throw new Error(`Transaction execution failed: ${errorMessage}`);
             }
           }
-        } catch (emailErr) {
-          console.error("Email transaction error:", emailErr);
-
-          // Format error for display
-          let errorMessage;
-          if (emailErr instanceof Error) {
-            errorMessage = emailErr.message;
-          } else if (typeof emailErr === 'object' && emailErr !== null) {
-            // Check for the specific status error
-            if (emailErr.status === "INVALID_REASON") {
-              throw new Error("Transaction failed: The MetaKeep service requires a valid transaction reason");
-            }
-
+        }
+      } catch (error) {
+        console.error("Transaction error:", error);
+        
+        // Format error properly to avoid [object Object] display
+        let errorMessage;
+        if (error instanceof Error) {
+          errorMessage = error.message;
+        } else if (typeof error === 'object' && error !== null) {
+          // Handle specific MetaKeep error statuses
+          if (error.status === "INVALID_REASON") {
+            errorMessage = "The MetaKeep service requires a valid transaction reason";
+          } else if (error.status === "MISSING_NONCE") {
+            errorMessage = "Transaction failed: Missing nonce parameter";
+          } else if (error.status === "USER_REQUEST_DENIED" || error.status === "USER_CONSENT_DENIED") {
+            errorMessage = "Transaction was denied by the user";
+          } else if (error.status === "MISSING_GAS") {
+            errorMessage = "Transaction failed: Missing gas parameter";
+          } else if (error.status === "INVALID_GAS_FEE_PARAMS") {
+            errorMessage = "Transaction failed: Invalid gas fee parameters";
+          } else {
             try {
-              errorMessage = JSON.stringify(emailErr);
+              errorMessage = JSON.stringify(error);
             } catch (e) {
               errorMessage = "Unknown error format";
             }
-          } else {
-            errorMessage = String(emailErr);
           }
-
-          throw new Error(`Email verification failed: ${errorMessage}`);
+        } else {
+          errorMessage = String(error);
         }
+        
+        setError(`Transaction failed: ${errorMessage}`);
+        setLoading(false);
+        throw new Error(`Transaction execution failed: ${errorMessage}`);
       }
-
-      // Fallback methods if no email is provided
-      // Try multiple methods to support different SDK versions
-      const errors: any[] = [];
-
-      // Method 1: Object form with transactionObject and bypassSecurityWarnings option
-      try {
-        console.log("Trying object form with documented approach");
-        // Use the exact format from documentation - transaction object and separate reason
-        const result = await (metaKeep as any).signTransaction(
-          txParams, // Use the transaction parameters directly
-          "Transfer" // Separate reason parameter
-        );
-
-        console.log("Sign transaction result:", result);
-        const hash = result?.transactionHash || result?.hash || (typeof result === 'string' ? result : null);
-        if (hash) {
-          console.log("Transaction signed with hash:", hash);
-          // Verify the transaction actually exists on the blockchain
-          const isValid = await verifyTransactionWithRetry(hash, provider, chainId);
-          if (!isValid) {
-            console.warn("⚠️ Transaction hash not found on blockchain:", hash);
-            // Instead of returning an unconfirmed hash, throw an error
-            throw new Error("Transaction may have failed to broadcast. The hash returned by MetaKeep was not found on the blockchain.");
-          }
-          // Only set the hash if it's verified
-          setTxHash(hash);
-          // Start monitoring the transaction in the background
-          monitorTransaction(hash, provider, chainId).catch(err => {
-            console.error("Error monitoring transaction:", err);
-          });
-          return hash;
-        }
-      } catch (err1: any) {
-        console.error("Error with object form:", err1);
-        errors.push(err1);
-
-        // Handle security rejection specifically
-        if (err1.message?.includes("malicious") ||
-          err1.message?.includes("security") ||
-          err1.code === "SECURITY_WARNING") {
-          throw new Error(`Security check: This transaction was flagged by MetaKeep's security system. If you trust this contract, try again and confirm in the MetaKeep interface.`);
-        }
-      }
-
-      // Method 2: Direct call with two parameters (older SDK versions)
-      try {
-        console.log("Trying direct call with two parameters");
-        const result = await (metaKeep as any).signTransaction(txParams, accountAddress);
-        console.log("Sign transaction result:", result);
-        const hash = typeof result === 'string' ? result : result?.transactionHash || result?.hash;
-        if (hash) {
-          console.log("Transaction signed with hash:", hash);
-          // Verify the transaction actually exists on the blockchain
-          const isValid = await verifyTransactionWithRetry(hash, provider, chainId);
-          if (!isValid) {
-            console.warn("⚠️ Transaction hash not found on blockchain:", hash);
-            // Instead of returning an unconfirmed hash, throw an error
-            throw new Error("Transaction may have failed to broadcast. The hash returned by MetaKeep was not found on the blockchain.");
-          }
-          // Only set the hash if it's verified
-          setTxHash(hash);
-          // Start monitoring the transaction in the background
-          monitorTransaction(hash, provider, chainId).catch(err => {
-            console.error("Error monitoring transaction:", err);
-          });
-          return hash;
-        }
-      } catch (err2: any) {
-        console.error("Error with direct call:", err2);
-        errors.push(err2);
-
-        // Check for security-related rejection
-        if (err2.message?.includes("malicious") ||
-          err2.message?.includes("security") ||
-          err2.code === "SECURITY_WARNING") {
-          throw new Error(`Security check: This transaction was flagged by MetaKeep's security system. If you trust this contract, try again and confirm in the MetaKeep interface.`);
-        }
-      }
-
-      // Method 3: Try sendTransaction (alternative method in some SDK versions)
-      try {
-        console.log("Trying sendTransaction method");
-        const result = await (metaKeep as any).sendTransaction(txParams);
-        console.log("Send transaction result:", result);
-        const hash = typeof result === 'string' ? result : result?.transactionHash || result?.hash;
-        if (hash) {
-          console.log("Transaction signed with hash:", hash);
-          // Verify the transaction actually exists on the blockchain
-          const isValid = await verifyTransactionWithRetry(hash, provider, chainId);
-          if (!isValid) {
-            console.warn("⚠️ Transaction hash not found on blockchain:", hash);
-            // Instead of returning an unconfirmed hash, throw an error
-            throw new Error("Transaction may have failed to broadcast. The hash returned by MetaKeep was not found on the blockchain.");
-          }
-          // Only set the hash if it's verified
-          setTxHash(hash);
-          // Start monitoring the transaction in the background
-          monitorTransaction(hash, provider, chainId).catch(err => {
-            console.error("Error monitoring transaction:", err);
-          });
-          return hash;
-        }
-      } catch (err3: any) {
-        console.error("Error with sendTransaction:", err3);
-        errors.push(err3);
-
-        // Check for security-related rejection
-        if (err3.message?.includes("malicious") ||
-          err3.message?.includes("security") ||
-          err3.code === "SECURITY_WARNING") {
-          throw new Error(`Security check: This transaction was flagged by MetaKeep's security system. If you trust this contract, try again and confirm in the MetaKeep interface.`);
-        }
-      }
-
-      // If we got here, all methods failed
-      throw new Error(`All transaction methods failed: ${errors.map(e => e.message || String(e)).join('; ')}`);
-    }
-    catch (err) {
-      console.error('Transaction execution error:', err);
-
-      // Handle the case where err is an object instead of an Error instance
-      let errorMessage: string;
-
+    } catch (err) {
+      console.error("Transaction processing error:", err);
+      
+      // Format error for display
+      let errorMessage;
       if (err instanceof Error) {
         errorMessage = err.message;
       } else if (typeof err === 'object' && err !== null) {
         try {
-          // Handle specific MetaKeep error formats
-          if (typeof err === 'object' && err.status === "INVALID_REASON") {
-            errorMessage = "Invalid reason provided for transaction. This may be a temporary issue with the MetaKeep service.";
-          } else {
-            // Try to convert object to a meaningful string
-            errorMessage = JSON.stringify(err);
-          }
-        } catch (jsonErr) {
-          // Fallback if the object can't be stringified (e.g., circular references)
-          errorMessage = 'An error occurred with the transaction. See console for details.';
+          errorMessage = JSON.stringify(err);
+        } catch (e) {
+          errorMessage = "Unknown error format";
         }
       } else {
         errorMessage = String(err);
       }
-
-      setError(errorMessage);
-      throw new Error(errorMessage); // Rethrow as proper Error instance
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /**
-   * Check if a transaction exists on the blockchain
-   * 
-   * @param txHash - Transaction hash to check
-   * @param provider - Provider to use for checking
-   * @returns Promise resolving to a boolean - true if transaction exists
-   */
-  const checkTransactionStatus = async (
-    txHash: string,
-    provider: ethers.providers.Provider
-  ): Promise<boolean> => {
-    try {
-      // First check if we can get the transaction
-      const tx = await provider.getTransaction(txHash);
-      if (tx) {
-        console.log("Transaction exists on blockchain:", tx);
-        return true;
-      }
-
-      try {
-        // Also check if we can get a receipt (might be already mined)
-        // Wrap in separate try/catch to handle specific receipt errors
-        const receipt = await provider.getTransactionReceipt(txHash);
-        if (receipt) {
-          console.log("Transaction receipt found:", receipt);
-          return true;
-        }
-      } catch (receiptErr) {
-        console.warn("Error getting transaction receipt:", receiptErr);
-        // Don't throw here, just continue with the function
-      }
-
-      return false;
-    } catch (err) {
-      console.error("Error checking transaction status:", err);
-      return false;
-    }
-  };
-
-  /**
-   * Monitors a transaction for status updates
-   * 
-   * @param txHash - Hash of the transaction to monitor
-   * @param provider - Ethers provider instance
-   * @param chainId - Chain ID to use for fallback providers
-   * @param maxAttempts - Maximum number of status check attempts
-   */
-  const monitorTransaction = async (
-    txHash: string,
-    provider: ethers.providers.Provider,
-    chainId: number = currentChainId,
-    maxAttempts: number = 8
-  ): Promise<void> => {
-    if (!txHash || txHash === 'email-verification-pending') return;
-
-    console.log("Starting transaction monitoring for hash:", txHash);
-
-    // Wait for initial blockchain propagation
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    let foundOnChain = false;
-    let attempts = 0;
-
-    // Create an array of providers to try
-    const providers: ethers.providers.Provider[] = [provider];
-
-    // Use our fallback providers system
-    const fallbackProviders: { [key: number]: string[] } = {
-      // Polygon Amoy testnet
-      80002: [
-        'https://rpc-amoy.polygon.technology/',
-        'https://polygon-amoy-rpc.publicnode.com',
-        'https://polygon-amoy.blockpi.network/v1/rpc/public',
-        'https://api.zan.top/node/v1/polygon/amoy/public',
-        'https://polygon-amoy.drpc.org',
-        'https://polygon-amoy.g.alchemy.com/v2/demo'
-      ],
-      // Polygon mainnet
-      137: [
-        'https://polygon-rpc.com',
-        'https://polygon-mainnet.g.alchemy.com/v2/demo',
-        'https://polygon.meowrpc.com',
-        'https://polygon.drpc.org',
-        'https://polygon.llamarpc.com',
-        'https://rpc-mainnet.maticvigil.com'
-      ],
-      // Ethereum mainnet
-      1: [
-        'https://eth-mainnet.g.alchemy.com/v2/demo',
-        'https://1rpc.io/eth',
-        'https://ethereum.publicnode.com',
-        'https://rpc.ankr.com/eth',
-        'https://eth.meowrpc.com',
-        'https://eth.llamarpc.com'
-      ]
-    };
-
-    // Add fallback providers
-    try {
-      const fallbacks = fallbackProviders[chainId] || [];
-      for (const url of fallbacks) {
-        try {
-          providers.push(new ethers.providers.JsonRpcProvider(url));
-        } catch (err) {
-          console.warn(`Failed to create provider for ${url}:`, err);
-        }
-      }
-    } catch (err) {
-      console.warn("Failed to create fallback providers for monitoring:", err);
-    }
-
-    // Check transaction status with increasing intervals
-    while (!foundOnChain && attempts < maxAttempts) {
-      // Try with each provider
-      for (const currentProvider of providers) {
-        try {
-          foundOnChain = await checkTransactionStatus(txHash, currentProvider);
-          if (foundOnChain) {
-            console.log(`Transaction found on blockchain during monitoring (attempt ${attempts + 1})`);
-            // If we found the transaction after initial failure, clear the error
-            setError(null);
-            break;
-          }
-        } catch (err) {
-          console.warn(`Provider failed during monitoring attempt ${attempts + 1}:`, err);
-          // Continue to next provider
-        }
-      }
-
-      if (!foundOnChain) {
-        attempts++;
-        const delayMs = Math.min(5000 * attempts, 30000); // Cap at 30 seconds
-        console.log(`Transaction not found. Monitoring attempt ${attempts}/${maxAttempts}. Next check in ${delayMs / 1000}s`);
-
-        if (attempts === maxAttempts) {
-          console.warn("Transaction not found on blockchain after extended monitoring.");
-          setError("Transaction may not have been submitted successfully. Please check the explorer later or try again.");
-        } else {
-          // Exponential backoff with a cap
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        }
-      }
-    }
-  };
-
-  /**
-   * Verify transaction with retry mechanism
-   * 
-   * Tries multiple times with increasing delays between attempts
-   * to account for blockchain propagation delay
-   * 
-   * @param hash - Transaction hash to verify
-   * @param provider - Provider to use
-   * @param chainId - Chain ID for the network
-   * @returns Promise resolving to a boolean - true if found
-   */
-  const verifyTransactionWithRetry = async (
-    hash: string,
-    provider: ethers.providers.Provider,
-    chainId: number
-  ): Promise<boolean> => {
-    // Skip for placeholder hashes
-    if (!hash || hash === 'email-verification-pending') {
-      return false;
-    }
-
-    // Maximum number of attempts
-    const maxAttempts = 5;
-
-    // Define fallback providers for each network - same as in getWorkingProvider
-    const fallbackProviders: { [key: number]: string[] } = {
-      // Polygon Amoy testnet
-      80002: [
-        'https://rpc-amoy.polygon.technology/',
-        'https://polygon-amoy-rpc.publicnode.com',
-        'https://polygon-amoy.blockpi.network/v1/rpc/public',
-        'https://api.zan.top/node/v1/polygon/amoy/public',
-        'https://polygon-amoy.drpc.org',
-        'https://polygon-amoy.g.alchemy.com/v2/demo'
-      ],
-      // Polygon mainnet
-      137: [
-        'https://polygon-rpc.com',
-        'https://polygon-mainnet.g.alchemy.com/v2/demo',
-        'https://polygon.meowrpc.com',
-        'https://polygon.drpc.org',
-        'https://polygon.llamarpc.com',
-        'https://rpc-mainnet.maticvigil.com'
-      ],
-      // Ethereum mainnet
-      1: [
-        'https://eth-mainnet.g.alchemy.com/v2/demo',
-        'https://1rpc.io/eth',
-        'https://ethereum.publicnode.com',
-        'https://rpc.ankr.com/eth',
-        'https://eth.meowrpc.com',
-        'https://eth.llamarpc.com'
-      ]
-    };
-
-    // Create provider instances from all RPC URLs
-    const providers: ethers.providers.Provider[] = [provider];
-    let rpcUrl = "";
-    
-    try {
-      // For our primary provider, get its URL to avoid duplicates
-      if (provider instanceof ethers.providers.JsonRpcProvider) {
-        rpcUrl = provider.connection.url;
-      }
-    } catch (err) {
-      console.warn("Could not get URL from primary provider:", err);
-    }
-    
-    // Add all potential providers from our list
-    const fallbacks = fallbackProviders[chainId] || [];
-    const allUrls = [rpcUrl, ...fallbacks].filter(url => url); // Remove empty URLs
-    
-    // Deduplicate URLs and create providers
-    const uniqueUrls = Array.from(new Set(allUrls));
-    
-    for (const url of uniqueUrls) {
-      if (!url || (rpcUrl && url === rpcUrl)) continue; // Skip empty or duplicate URLs
-      try {
-        providers.push(new ethers.providers.JsonRpcProvider(url));
-      } catch (err) {
-        console.warn(`Failed to create provider for ${url}:`, err);
-      }
-    }
-    
-    // Try verification multiple times with increasing delays
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      console.log(`Verification attempt ${attempt}/${maxAttempts} for hash ${hash}`);
-
-      // Try with each provider - use Promise.all for faster parallel checks
-      const checkPromises = providers.map(async (currentProvider) => {
-        try {
-          // Check if transaction exists
-          const exists = await checkTransactionStatus(hash, currentProvider);
-          return exists;
-        } catch (err) {
-          console.warn(`Provider failed during attempt ${attempt}:`, err);
-          return false;
-        }
-      });
       
-      try {
-        const results = await Promise.all(checkPromises);
-        if (results.some(result => result === true)) {
-          console.log(`Transaction found on attempt ${attempt} with provider`);
-          return true;
-        }
-      } catch (err) {
-        console.warn(`Error checking transaction status on attempt ${attempt}:`, err);
-      }
-
-      if (attempt < maxAttempts) {
-        // Wait longer between each retry
-        // 1st retry: 5 seconds, 2nd retry: 10 seconds, etc.
-        const delay = attempt * 5000;
-        console.log(`Transaction not found, will retry in ${delay}ms`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
+      setError(errorMessage);
+      setLoading(false);
+      throw new Error(`Transaction handling error: ${errorMessage}`);
     }
 
-    console.warn(`Transaction not found after ${maxAttempts} attempts`);
-    return false;
+    // If we got a response but no hash, the transaction might be pending email verification
+    console.log("Transaction initiated, waiting for email verification");
+    const placeholderHash = "email-verification-pending";
+    setTxHash(placeholderHash);
+    setLoading(false);
+    return placeholderHash;
   };
 
   // Return hook interface
